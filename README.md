@@ -51,3 +51,15 @@ The command bundles each checkout's actual engine and records its Git revision. 
 Delivery-first prioritises real Project work. Politics-first prioritises doing the Grand Plan for show, claiming credit and talking to the Senior Analyst. Adaptive favours delivery when real or reported Project status drops below Green or the player is on a Final Warning. The batch compares normal Company Events with a scenario that excludes events that directly open seats.
 
 The batch also pairs each politics-first run with a run where the Ideas Workshop screenshot move is withheld. A finding requires more promotion gains than losses in both scenarios, with a complete set of paired outcomes and a log entry for the move in a winning run. The report links both sides of the experiment and gives a playtest question. This is a design signal for those seeds. Expected misses and design findings leave the batch passing. Adapter failures make it exit nonzero.
+
+## Decision pacing
+
+To reproduce a controlled stall from the gameBench root with Node.js 24.13 or later, run:
+
+```powershell
+npm.cmd ci && npm.cmd run --silent benchmark -- examples/pacing.json
+```
+
+Open the report. Dispatch to delivery confirmation takes three scripted steps in the baseline and five in the candidate. The candidate crosses the example threshold of four steps. Open the candidate log at the two line numbers under the stall, then run the same command with its `replay.json` to reproduce the result.
+
+An optional manifest field, `pacing.stallAfterSteps`, enables pacing reports. Adapters can emit a `decision` event with a move ID and a strictly increasing positive step number. Set `meaningful: false` for forced decisions. Pacing compares consecutive meaningful decisions by move pair and occurrence and counts unmatched intervals separately. Each changed or stalled interval names the build and links to the surrounding log lines. The report records the scenario and seed. The Failureship strategy batch adds this section to each paired report with a five-step threshold. Its step count advances for every engine choice, including acknowledgements. Treat flagged intervals as playtest leads. They measure scripted steps rather than wall-clock response time.

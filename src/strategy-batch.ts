@@ -62,7 +62,7 @@ export async function batch(source: string, output: string) {
       settings: { withholdMove: withholdMove ? move : null },
     };
     const result = await compare(
-      { adapter, baseline, candidate, inputs },
+      { adapter, baseline, candidate, inputs, pacing: { stallAfterSteps: 5 } },
       directory,
     );
     return {

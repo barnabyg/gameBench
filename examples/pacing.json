@@ -1,0 +1,12 @@
+{
+  "adapter": "controlled.ts",
+  "baseline": { "version": "control-1", "build": "baseline.json" },
+  "candidate": { "version": "control-2", "build": "candidate.json" },
+  "inputs": {
+    "scenario": "first-delivery",
+    "strategy": "deliver",
+    "seed": 2,
+    "settings": { "pace": 1 }
+  },
+  "pacing": { "stallAfterSteps": 4 }
+}

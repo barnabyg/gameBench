@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { comparePacing, decisionSchema, type Decision } from "./pacing.ts";
 
 export const buildSchema = z.object({
   version: z.string().min(1),
@@ -11,6 +12,7 @@ const manifestSchema = z.object({
   adapter: z.string().min(1),
   baseline: buildSchema,
   candidate: buildSchema,
+  pacing: z.object({ stallAfterSteps: z.int().positive() }).optional(),
   inputs: z.object({
     scenario: z.string().min(1),
     strategy: z.string().min(1),
@@ -32,6 +34,7 @@ export async function compare(
     );
   }
   await save("replay.json", manifest);
+  const decisions = { baseline: [] as Decision[], candidate: [] as Decision[] };
   async function run(role: "baseline" | "candidate") {
     const build = manifest[role];
     const screenshot = `${role}-milestone.png`;
@@ -59,10 +62,18 @@ export async function compare(
         );
       }
       const lines = result.stdout.replace(/\r?\n$/, "").split("\n");
-      let lastEvent: unknown;
+      let lastEvent: Record<string, unknown> | undefined;
+      let previousStep = 0;
       for (const [index, line] of lines.entries()) {
         try {
           lastEvent = z.record(z.string(), z.unknown()).parse(JSON.parse(line));
+          if (manifest.pacing && lastEvent.event === "decision") {
+            const decision = decisionSchema.parse(lastEvent);
+            if (decision.step <= previousStep)
+              throw new Error("Decision steps must increase");
+            previousStep = decision.step;
+            decisions[role].push({ ...decision, line: index + 1 });
+          }
         } catch {
           throw new Error(
             `Invalid event in ${path.join(directory, log)} at line ${index + 1}`,
@@ -120,6 +131,22 @@ export async function compare(
     outcomes: { attempted: 2, reached, missing: 2 - reached },
     changeInTurns: complete ? candidate.turns - baseline.turns : null,
     replay: "replay.json",
+    ...(manifest.pacing
+      ? {
+          pacing: comparePacing(
+            {
+              ...baseline,
+              decisions: baseline.status === "failed" ? [] : decisions.baseline,
+            },
+            {
+              ...candidate,
+              decisions:
+                candidate.status === "failed" ? [] : decisions.candidate,
+            },
+            manifest.pacing.stallAfterSteps,
+          ),
+        }
+      : {}),
   });
   return {
     path: path.join(directory, "report.json"),

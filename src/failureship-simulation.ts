@@ -101,6 +101,7 @@ for (let step = 1; step <= 1000; step++) {
     emit({
       event: "decision",
       step,
+      meaningful: available.length > 1,
       month: view.month,
       move: moveOf(choice),
       phase: view.step.kind,
