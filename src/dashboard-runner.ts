@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { command, type CommandResult } from "./dashboard-command.ts";
+import { comparisonBaselineSchema } from "./dashboard-reports.ts";
 import { visualReviewSchema } from "./visual-review.ts";
 
 const repositoryName = z
@@ -265,7 +266,10 @@ export class DashboardRunner {
     return (await this.games()).get(repository.toLowerCase());
   }
 
-  private async setup(fullName: string, onProgress: (message: string) => void) {
+  private async prepareSetup(
+    fullName: string,
+    onProgress: (message: string) => void,
+  ) {
     onProgress("Validating benchmark setup.");
     const key = repositoryName.parse(fullName).toLowerCase();
     const source = path.join(
@@ -305,21 +309,37 @@ export class DashboardRunner {
       `Could not verify the baseline commit for ${fullName}. Check ${source} and retry`,
     );
 
-    const saved = {
+    return {
       ...recipe,
       repository: fullName,
       comparison: { ...recipe.comparison, adapter },
     };
+  }
+
+  private async confirmSetup(recipe: Recipe, report: string) {
+    try {
+      const { baseline } = comparisonBaselineSchema.parse(
+        JSON.parse(await readFile(report, "utf8")),
+      );
+      if (baseline.status === "failed")
+        return "Setup could not be saved because the baseline did not run. Open the report for evidence, correct the recipe and retry.";
+      await this.saveSetup(recipe);
+    } catch (error) {
+      return `Could not save benchmark setup. Open the report for evidence and retry. ${String(error)}`;
+    }
+  }
+
+  private async saveSetup(recipe: Recipe) {
+    const key = recipe.repository.toLowerCase();
     const destination = path.join(this.setupState, this.recipeFilename(key));
     const pending = `${destination}.${randomUUID()}.tmp`;
     try {
-      await writeFile(pending, JSON.stringify(saved));
+      await writeFile(pending, JSON.stringify(recipe));
       await rename(pending, destination);
     } finally {
       await rm(pending, { force: true });
     }
-    this.savedRecipes.set(key, saved);
-    return saved;
+    this.savedRecipes.set(key, recipe);
   }
 
   private async api(
@@ -368,11 +388,10 @@ export class DashboardRunner {
     fullName: string,
     branch: string,
     onProgress: (message: string) => void,
-    onSetupComplete: () => void,
   ) {
     const configured = await this.recipeFor(fullName);
-    const recipe = configured ?? (await this.setup(fullName, onProgress));
-    if (!configured) onSetupComplete();
+    const recipe =
+      configured ?? (await this.prepareSetup(fullName, onProgress));
     const { repository } = recipe;
 
     onProgress(`Resolving branch ${branch}`);
@@ -490,11 +509,17 @@ export class DashboardRunner {
       inside(directory, report) &&
       path.basename(report) === "report.json" &&
       (await stat(report).catch(() => undefined))?.isFile()
-    )
+    ) {
+      const setupError = configured
+        ? undefined
+        : await this.confirmSetup(recipe, report);
       return {
         reports: [report],
         passed: result.status === 0 && !result.error,
+        setupComplete: !configured && !setupError,
+        setupError,
       };
+    }
 
     assertSuccess(result, "Benchmark failed", evidence);
     throw new Error(`Benchmark finished without a report. See ${evidence}.`);

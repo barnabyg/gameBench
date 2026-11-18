@@ -224,6 +224,21 @@ test(
       await page.getByText(/Set build\.output.*inside the checkout/).waitFor();
       await repo.getByText("Needs setup").waitFor();
 
+      await writeFile(path.join(recipeDirectory, "wrong.mjs"), "export {};");
+      await writeFile(
+        recipeFile,
+        JSON.stringify({
+          ...game.recipe,
+          comparison: { ...game.recipe.comparison, adapter: "wrong.mjs" },
+        }),
+      );
+      await run.click();
+      const failedSetup = page
+        .getByRole("listitem")
+        .filter({ hasText: "Setup could not be saved because the baseline" });
+      await failedSetup.getByRole("link", { name: "Open report" }).waitFor();
+      await repo.getByText("Needs setup").waitFor();
+
       await writeFile(
         recipeFile,
         JSON.stringify({
@@ -240,6 +255,8 @@ test(
       await run.click();
       await repo.getByText("Ready", { exact: true }).waitFor();
       await page
+        .getByRole("listitem")
+        .filter({ hasText: "Benchmark complete." })
         .getByRole("link", { name: "Open report" })
         .click({ timeout: 45_000 });
       await page

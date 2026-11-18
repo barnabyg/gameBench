@@ -116,10 +116,8 @@ export class DashboardJobs {
         (progress) => {
           job.message = progress;
         },
-        () => {
-          job.setupComplete = true;
-        },
       );
+      if (result.setupComplete) job.setupComplete = true;
       const record = {
         repository: job.repository,
         branch: job.branch,
@@ -133,10 +131,12 @@ export class DashboardJobs {
       const pending = `${filename}.tmp`;
       await writeFile(pending, JSON.stringify(record));
       await rename(pending, filename);
-      job.status = result.passed ? "Passed" : "Failed";
-      job.message = result.passed
-        ? "Benchmark complete."
-        : "A benchmark check failed. Open the report for evidence.";
+      job.status = result.passed && !result.setupError ? "Passed" : "Failed";
+      job.message =
+        result.setupError ??
+        (result.passed
+          ? "Benchmark complete."
+          : "A benchmark check failed. Open the report for evidence.");
     } catch (error) {
       job.status = "Failed";
       job.message = message(error);

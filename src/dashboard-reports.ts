@@ -179,6 +179,7 @@ const batchSchema = z.object({
   ),
 });
 const savedReport = z.union([reportSchema, batchSchema]);
+export const comparisonBaselineSchema = reportSchema.pick({ baseline: true });
 
 export type DashboardReport = Awaited<ReturnType<typeof loadReport>>;
 
