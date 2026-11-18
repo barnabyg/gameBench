@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import path from "node:path";
 import { once } from "node:events";
 import { chromium, type Page } from "playwright";
 import sirv from "sirv";
 import { z } from "zod";
 
-const { build, screenshot, inputs } = z
+const { build, screenshot, failureScreenshot, inputs } = z
   .object({
     build: z.string(),
     screenshot: z.string(),
+    failureScreenshot: z.string(),
     inputs: z.object({
       scenario: z.literal("first-promotion"),
       strategy: z.literal("seek-team-lead"),
@@ -48,13 +48,14 @@ async function reachPromotion(page: Page) {
     page.getByTestId("hotspot-work").and(page.locator(":enabled")),
   ];
   const ready = actions.reduce((all, next) => all.or(next), promotion);
-  for (let step = 0; step < 80; step++) {
+  for (let step = 0; step <= 80; step++) {
     await ready.first().waitFor({ state: "visible", timeout: 15000 });
     if (await promotion.isVisible()) {
       if (!(await notice.textContent())?.includes("Congratulations: Team lead"))
         throw new Error("The promotion decision did not award Team lead");
       return;
     }
+    if (step === 80) break;
     for (const action of actions) {
       if (!(await action.isVisible())) continue;
       const id = await action.getAttribute("data-testid");
@@ -78,6 +79,9 @@ try {
   const browser = await chromium.launch({
     args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
+  const deadline = setTimeout(() => {
+    void browser.close().catch(() => undefined);
+  }, 120000);
   try {
     const page = await browser.newPage({
       viewport: inputs.settings,
@@ -105,16 +109,13 @@ try {
       const turn = Number(/(\d+) of 18\b/.exec(month ?? "")?.[1]);
       event({ event: "milestone", turn });
     } catch (error) {
-      const failure = path.join(
-        path.dirname(screenshot),
-        `${path.basename(screenshot, ".png")}-failure.png`,
-      );
       await page
-        .screenshot({ path: failure, timeout: 10000 })
+        .screenshot({ path: failureScreenshot, timeout: 10000 })
         .catch(() => undefined);
       throw error;
     }
   } finally {
+    clearTimeout(deadline);
     await browser.close();
   }
 } finally {

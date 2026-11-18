@@ -38,13 +38,15 @@ async function compare(source: string, output: string) {
   await save("replay.json", manifest);
   async function run(role: "baseline" | "candidate") {
     const build = manifest[role];
-    const screenshot = `${role}-promotion.png`;
+    const screenshot = `${role}-milestone.png`;
+    const failureScreenshot = `${role}-failure.png`;
     const result = spawnSync(process.execPath, [manifest.adapter], {
       encoding: "utf8",
       input: JSON.stringify({
         build: build.build,
         inputs: manifest.inputs,
         screenshot: path.join(directory, screenshot),
+        failureScreenshot: path.join(directory, failureScreenshot),
       }),
       timeout: 180000,
       maxBuffer: 16 * 1024 * 1024,
@@ -92,7 +94,7 @@ async function compare(source: string, output: string) {
         status: "failed" as const,
         turns: null,
         error,
-        ...(await linkScreenshot(`${role}-promotion-failure.png`)),
+        ...(await linkScreenshot(failureScreenshot)),
       };
     }
   }
