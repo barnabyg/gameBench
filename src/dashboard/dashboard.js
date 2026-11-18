@@ -66,6 +66,10 @@ function viewFinding(report, area, button) {
     finding.append(element("p", "This report did not measure this area."));
   for (const item of check.findings) {
     const section = element("article", undefined, "finding");
+    if (item.status) {
+      section.dataset.status = item.status;
+      section.append(element("span", item.status, "status"));
+    }
     section.append(element("p", item.summary));
     if (item.question) section.append(element("p", item.question, "playtest"));
     const previews = item.evidence.filter((evidence) => evidence.image);

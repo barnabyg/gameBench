@@ -8,7 +8,12 @@ export const areas = ["Balance", "Pacing", "Visuals", "Stability"] as const;
 type Area = (typeof areas)[number];
 type Status = "Passed" | "Review" | "Failed" | "Not measured";
 type Evidence = { label: string; url: string; image: boolean };
-type Finding = { summary: string; evidence: Evidence[]; question?: string };
+type Finding = {
+  summary: string;
+  evidence: Evidence[];
+  question?: string;
+  status?: Status;
+};
 type Check = { status: Status; findings: Finding[]; regression?: boolean };
 type Checks = Record<Area, Check>;
 type Link = (label: string, file?: string) => Evidence[];
@@ -31,7 +36,13 @@ const interval = z.object({
   from: z.object({ move: nonempty, line: z.number() }),
   to: z.object({ move: nonempty, line: z.number() }),
 });
-const issues = z.array(z.object({ type: z.string(), target: z.string() }));
+const issues = z.array(
+  z.object({
+    type: z.string(),
+    target: z.string(),
+    other: z.string().optional(),
+  }),
+);
 const reportSchema = z.object({
   inputs: z.object({
     scenario: nonempty,
@@ -44,7 +55,10 @@ const reportSchema = z.object({
   layout: z
     .object({
       status: z.enum(["passed", "failed"]),
-      resolution,
+      resolution: z.object({
+        width: z.number().int().positive().catch(0),
+        height: z.number().int().positive().catch(0),
+      }),
       baseline: z.object({ issues: issues.nullable() }).optional(),
       candidate: z.object({ issues: issues.nullable() }),
     })
@@ -286,22 +300,38 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
       resolution: { width, height },
       candidate,
     } = report.layout;
+    const baselineIssues = report.layout.baseline?.issues;
+    const candidateIssues = candidate.issues ?? [];
+    const issueKey = (issue: (typeof candidateIssues)[number]) =>
+      JSON.stringify([issue.type, issue.target, issue.other]);
+    const previous = new Set(baselineIssues?.map(issueKey));
+    const newDefects = baselineIssues
+      ? candidateIssues.filter((issue) => !previous.has(issueKey(issue)))
+      : [];
+    const layoutStatus = status === "passed" ? "Passed" : "Failed";
+    const dimensions =
+      width && height
+        ? ` at ${width} × ${height}`
+        : " (resolution unavailable)";
     checks.Visuals = {
-      status: status === "passed" ? "Passed" : "Failed",
-      regression:
-        status === "failed" &&
-        report.layout.baseline?.issues?.length === 0 &&
-        !!candidate.issues?.length,
+      status: layoutStatus,
+      regression: status === "failed" && newDefects.length > 0,
       findings: [
         {
-          summary: candidate.issues?.length
-            ? `Promotion layout has ${candidate.issues.length} ${candidate.issues.length === 1 ? "issue" : "issues"} at ${width} × ${height}.`
-            : `Promotion layout ${status} at ${width} × ${height}.`,
+          summary: newDefects.length
+            ? `Promotion layout has ${newDefects.length} new ${newDefects.length === 1 ? "defect" : "defects"}${dimensions}.`
+            : candidateIssues.length
+              ? `Promotion layout has ${candidateIssues.length} ${candidateIssues.length === 1 ? "defect" : "defects"}${dimensions}.`
+              : `Promotion layout ${status}${dimensions}.`,
           evidence: [...captures, ...logs],
+          status: layoutStatus,
         },
-        ...(candidate.issues ?? []).map((issue) => ({
-          summary: `${issue.type} · ${issue.target}`,
-          evidence: [],
+        ...candidateIssues.map((issue): Finding => ({
+          summary: [issue.type, issue.target, issue.other]
+            .filter(Boolean)
+            .join(" · "),
+          evidence: [...captures, ...logs],
+          status: layoutStatus,
         })),
       ],
     };
@@ -317,7 +347,7 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
     const sorted = [...checkpoints].sort(
       (a, b) => checkpointOrder[a.status] - checkpointOrder[b.status],
     );
-    const visualFindings = [];
+    const visualFindings: Finding[] = [];
     for (const item of sorted) {
       const { width, height } = item.resolution;
       const outcome =
@@ -331,6 +361,7 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
           : `${((item.changedPixelRatio ?? 0) * 100).toLocaleString("en", { maximumSignificantDigits: 3 })}% changed pixels.`;
       visualFindings.push({
         summary: `${item.label} at ${width} × ${height}. ${outcome}`,
+        status: item.status === "matched" ? "Passed" : "Review",
         question:
           item.status === "changed"
             ? report.visualReview.questions?.at(-1)
@@ -340,6 +371,7 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
             link(`${names[key]} screenshot`, item[key].screenshot),
           ),
           ...link("Visual diff", item.diff),
+          ...logs,
         ],
       });
     }

@@ -6,6 +6,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { test } from "node:test";
 import { chromium } from "playwright";
+import { PNG } from "pngjs";
 
 test(
   "opens a saved comparison and follows its evidence in the dashboard",
@@ -29,6 +30,45 @@ test(
     comparison.status = "incomplete";
     delete comparison.pacing;
     await writeFile(regressedPath, JSON.stringify(comparison));
+    const directoryOfReports = path.dirname(saved);
+    const layoutPath = path.join(directoryOfReports, "layout.json");
+    const existingPath = path.join(directoryOfReports, "existing-layout.json");
+    const existing = { type: "clipping", target: "Heading" };
+    const added = { type: "overlap", target: "Body", other: "Continue" };
+    const layoutReview = {
+      ...comparison,
+      candidate: { ...comparison.candidate, status: "reached", turns: 6 },
+      layout: {
+        status: "failed",
+        resolution: {},
+        baseline: { issues: [existing] },
+        candidate: { issues: [existing, added] },
+      },
+      visualReview: {
+        checkpoints: [
+          {
+            label: "Ground floor",
+            resolution: { width: 1280, height: 800 },
+            status: "changed",
+            baseline: { screenshot: "baseline.png" },
+            candidate: { screenshot: "candidate.png" },
+            changedPixelRatio: 0.02,
+            diff: "diff.png",
+          },
+        ],
+      },
+    };
+    await writeFile(layoutPath, JSON.stringify(layoutReview));
+    await writeFile(
+      existingPath,
+      JSON.stringify({
+        ...layoutReview,
+        layout: { ...layoutReview.layout, candidate: { issues: [existing] } },
+      }),
+    );
+    const png = PNG.sync.write(new PNG({ width: 1, height: 1 }));
+    for (const name of ["baseline.png", "candidate.png", "diff.png"])
+      await writeFile(path.join(directoryOfReports, name), png);
     const dashboard = spawn(
       process.execPath,
       [
@@ -41,6 +81,10 @@ test(
         `Review game=${saved}`,
         "--report",
         `Regression=${regressedPath}`,
+        "--report",
+        `Existing layout=${existingPath}`,
+        "--report",
+        `New layout defect=${layoutPath}`,
       ],
       { stdio: ["ignore", "pipe", "inherit"] },
     );
@@ -60,7 +104,9 @@ test(
     await rows.first().waitFor();
     assert.deepEqual(await rows.allTextContents(), [
       "Regressionfirst-delivery",
+      "New layout defectfirst-delivery",
       "Review gamefirst-delivery",
+      "Existing layoutfirst-delivery",
     ]);
     await page.getByRole("button", { name: "Stability: Failed" }).waitFor();
     const pacing = page.getByRole("button", { name: /Pacing.*Review/ });
@@ -84,5 +130,19 @@ test(
       await page.getByRole("button", { name: /Visuals.*Not measured/ }).count(),
       2,
     );
+    const visual = page.getByRole("row", { name: /New layout defect/ });
+    await visual.getByRole("button", { name: "Visuals: Failed" }).click();
+    const panel = page.locator("#finding");
+    await panel.getByText(/1 new defect.*resolution unavailable/).waitFor();
+    const checkpoint = panel
+      .getByRole("article")
+      .filter({ hasText: "Ground floor" });
+    await checkpoint.getByText("Review", { exact: true }).waitFor();
+    await checkpoint.getByRole("link", { name: "Candidate log" }).waitFor();
+    const diff = checkpoint.getByRole("link", { name: "Visual diff" });
+    const picture = await page.request.get(
+      new URL(await diff.getAttribute("href"), first.value).href,
+    );
+    assert.equal(picture.headers()["content-type"], "image/png");
   },
 );

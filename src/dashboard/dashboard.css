@@ -231,6 +231,9 @@ tbody tr:hover {
   border-top: 1px solid var(--border);
   padding-bottom: 0.75rem;
 }
+.finding > .status {
+  margin-top: 0.75rem;
+}
 .previews {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
