@@ -1,0 +1,7 @@
+{
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["src/**", "tests/**", "examples/**", "scripts/**"] },
+  "linter": {
+    "rules": { "preset": "recommended", "security": { "noSecrets": "error" } }
+  }
+}
