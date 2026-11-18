@@ -447,6 +447,36 @@ test(
       await picker
         .getByRole("option", { name: newBranch, includeHidden: true })
         .waitFor({ state: "attached" });
+
+      const remove = page.getByRole("button", { name: `Remove ${repository}` });
+      const result = page.getByRole("rowheader", {
+        name: new RegExp(repository),
+      });
+      const checkbox = page.getByRole("checkbox", { name: repository });
+      await remove.click();
+      await result.waitFor({ state: "detached" });
+      assert.equal(await checkbox.isChecked(), false);
+      assert.equal(await picker.count(), 0);
+      assert.equal(
+        await page.getByRole("link", { name: "Open report" }).count(),
+        0,
+      );
+      await selection.getByText("0 selected", { exact: true }).waitFor();
+      assert.ok(
+        await selection
+          .getByRole("button", { name: "Run selected" })
+          .isDisabled(),
+      );
+
+      await page.reload();
+      await page.getByText("0 games · 0 reports", { exact: true }).waitFor();
+      await page.getByRole("link", { name: "Repositories" }).click();
+      assert.equal(await checkbox.isChecked(), false);
+      await checkbox.check();
+      await result.waitFor();
+      assert.equal(await picker.inputValue(), "");
+      await page.getByRole("link", { name: "Open report" }).waitFor();
+
       await server.stop();
       server = await launch(directory, game);
       await page.goto(server.url);

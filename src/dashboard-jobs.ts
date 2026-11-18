@@ -158,7 +158,7 @@ export class DashboardJobs {
   private async addReports(record: SavedRun) {
     const added = await Promise.all(
       record.reports.map((source) =>
-        loadReport(record.repository, source, randomUUID(), record.branch),
+        loadReport(record.repository, source, randomUUID(), record),
       ),
     );
     this.reports.push(...added);
