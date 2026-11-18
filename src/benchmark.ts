@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { layoutSchema } from "./promotion-layout.ts";
+import { reviewVisuals, visualReviewSchema } from "./visual-review.ts";
 import { comparePacing, decisionSchema, type Decision } from "./pacing.ts";
 
 export const buildSchema = z.object({
@@ -12,6 +14,7 @@ const manifestSchema = z.object({
   adapter: z.string().min(1),
   baseline: buildSchema,
   candidate: buildSchema,
+  visualReview: visualReviewSchema.optional(),
   pacing: z.object({ stallAfterSteps: z.int().positive() }).optional(),
   inputs: z.object({
     scenario: z.string().min(1),
@@ -34,16 +37,28 @@ export async function compare(
     );
   }
   await save("replay.json", manifest);
+  const layouts: Partial<
+    Record<"baseline" | "candidate", z.infer<typeof layoutSchema>>
+  > = {};
   const decisions = { baseline: [] as Decision[], candidate: [] as Decision[] };
   async function run(role: "baseline" | "candidate") {
     const build = manifest[role];
     const screenshot = `${role}-milestone.png`;
     const failureScreenshot = `${role}-failure.png`;
+    const checkpointDirectory = manifest.visualReview
+      ? path.join(directory, role)
+      : undefined;
+    if (checkpointDirectory) await mkdir(checkpointDirectory);
     const result = spawnSync(process.execPath, [manifest.adapter], {
       encoding: "utf8",
       input: JSON.stringify({
         build: build.build,
         inputs: manifest.inputs,
+        checkpointDirectory,
+        checkpointResolution: manifest.visualReview && {
+          width: manifest.visualReview.width,
+          height: manifest.visualReview.height,
+        },
         screenshot: path.join(directory, screenshot),
         failureScreenshot: path.join(directory, failureScreenshot),
       }),
@@ -67,6 +82,11 @@ export async function compare(
       for (const [index, line] of lines.entries()) {
         try {
           lastEvent = z.record(z.string(), z.unknown()).parse(JSON.parse(line));
+          if (
+            manifest.inputs.settings.checkLayout === true &&
+            lastEvent.event === "promotion-layout"
+          )
+            layouts[role] = layoutSchema.parse(lastEvent);
           if (manifest.pacing && lastEvent.event === "decision") {
             const decision = decisionSchema.parse(lastEvent);
             if (decision.step <= previousStep)
@@ -123,7 +143,48 @@ export async function compare(
     ({ status }) => status === "reached",
   ).length;
   const complete = baseline.turns !== null && candidate.turns !== null;
+  const layout =
+    manifest.inputs.settings.checkLayout === true
+      ? {
+          status:
+            layouts.candidate &&
+            layouts.candidate.issues.length === 0 &&
+            layouts.candidate.resolution.width ===
+              manifest.inputs.settings.width &&
+            layouts.candidate.resolution.height ===
+              manifest.inputs.settings.height &&
+            layouts.baseline?.resolution.width ===
+              manifest.inputs.settings.width &&
+            layouts.baseline?.resolution.height ===
+              manifest.inputs.settings.height
+              ? "passed"
+              : "failed",
+          resolution: {
+            width: manifest.inputs.settings.width,
+            height: manifest.inputs.settings.height,
+          },
+          baseline: {
+            version: baseline.version,
+            issues: layouts.baseline?.issues ?? null,
+          },
+          candidate: {
+            version: candidate.version,
+            issues: layouts.candidate?.issues ?? null,
+          },
+        }
+      : undefined;
+  if (layout?.status === "failed")
+    console.error(`Promotion layout check failed. Evidence: ${directory}`);
   await save("report.json", {
+    ...(layout ? { layout } : {}),
+    ...(manifest.visualReview
+      ? {
+          visualReview: await reviewVisuals(directory, manifest.visualReview, {
+            baseline: baseline.version,
+            candidate: candidate.version,
+          }),
+        }
+      : {}),
     status: complete ? "complete" : "incomplete",
     inputs: manifest.inputs,
     baseline,
@@ -153,6 +214,7 @@ export async function compare(
     baseline,
     candidate,
     complete,
+    passed: complete && layout?.status !== "failed",
     decisions,
   };
 }
@@ -170,7 +232,7 @@ if (import.meta.main) {
       build.build = path.resolve(root, build.build);
     const result = await compare(manifest, output);
     console.log(result.path);
-    if (!result.complete) process.exitCode = 1;
+    if (!result.passed) process.exitCode = 1;
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

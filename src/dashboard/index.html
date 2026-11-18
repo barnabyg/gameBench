@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>gameBench</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+    <script type="module" src="/dashboard.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell">
+        <a class="wordmark" href="/">game<span>Bench</span></a>
+        <nav aria-label="Dashboard">
+          <a id="choose-repos" href="#repositories">Repositories</a>
+          <a href="#results">Results</a>
+        </nav>
+      </div>
+    </header>
+    <main class="shell">
+      <details id="repositories" class="repository-panel">
+        <summary>GitHub repositories</summary>
+        <div class="repository-tools">
+          <label for="repository-search">Search repositories</label>
+          <input id="repository-search" type="search" autocomplete="off" />
+          <button id="run-selected" class="primary" type="button" disabled>
+            Run selected
+          </button>
+        </div>
+        <p id="repository-status" role="status"></p>
+        <ul id="repository-list" aria-label="GitHub repositories"></ul>
+      </details>
+      <section id="runs" aria-labelledby="runs-title" hidden>
+        <h2 id="runs-title">Benchmark runs</h2>
+        <ul id="run-list" aria-live="polite"></ul>
+      </section>
+      <section id="results" aria-labelledby="results-title">
+        <div class="section-heading">
+          <h1 id="results-title">Benchmark results</h1>
+          <p id="result-count" role="status"></p>
+        </div>
+        <div id="matrix"></div>
+        <section id="finding" hidden tabindex="-1"></section>
+      </section>
+    </main>
+  </body>
+</html>
