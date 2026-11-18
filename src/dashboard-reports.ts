@@ -291,7 +291,7 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
           : baseline.status === "passed"
             ? "Passed"
             : "Review",
-      regression: baseline.status === "passed" && candidate.status === "failed",
+      regression: baseline.status === "passed" && candidate.status !== "passed",
       findings: (["candidate", "baseline"] as const).map((key) => {
         const result = report.saveResume?.[key];
         const summary =
