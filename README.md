@@ -37,3 +37,17 @@ Pull requests run this same command against two pinned Failureship commits. Down
 ## Incomplete comparisons
 
 If either build exits early or misses the milestone, the runner still attempts both builds and prints the report path before returning a nonzero exit code. The report includes the scenario and seed, both builds' statuses and logs, and counts of attempted, reached, and missing milestones. A missing milestone has a null turn count, and the comparison has a null turn difference.
+
+## Failureship strategy batch
+
+From the gameBench root, with Node.js 24.13 or later and two Failureship Git checkouts at the revisions to compare, run:
+
+```powershell
+npm.cmd ci && npm.cmd run failureship:strategies -- C:/game/baseline C:/game/candidate 2 14 16 23
+```
+
+The command bundles each checkout's actual engine and records its Git revision. Open the printed batch report. Each strategy has four attempts per build in each of two scenarios. The report shows promotion counts and rates, months for successful promotions, and paths to paired reports and replay manifests. The default seeds are 2, 14, 16 and 23. Keep the generated engine bundles for replay.
+
+Delivery-first prioritises real Project work. Politics-first prioritises doing the Grand Plan for show, claiming credit and talking to the Senior Analyst. Adaptive favours delivery when real or reported Project status drops below Green or the player is on a Final Warning. The batch compares normal Company Events with a scenario that excludes events that directly open seats.
+
+The batch also pairs each politics-first run with a run where the Ideas Workshop screenshot move is withheld. A finding requires more promotion gains than losses in both scenarios, with a complete set of paired outcomes and a log entry for the move in a winning run. The report links both sides of the experiment and gives a playtest question. This is a design signal for those seeds. Expected misses and design findings leave the batch passing. Adapter failures make it exit nonzero.

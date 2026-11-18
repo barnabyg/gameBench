@@ -3,7 +3,7 @@ import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
-const buildSchema = z.object({
+export const buildSchema = z.object({
   version: z.string().min(1),
   build: z.string().min(1),
 });
@@ -19,14 +19,10 @@ const manifestSchema = z.object({
   }),
 });
 
-async function compare(source: string, output: string) {
-  const manifest = manifestSchema.parse(
-    JSON.parse(await readFile(source, "utf8")),
-  );
-  const root = path.dirname(path.resolve(source));
-  manifest.adapter = path.resolve(root, manifest.adapter);
-  for (const build of [manifest.baseline, manifest.candidate])
-    build.build = path.resolve(root, build.build);
+export async function compare(
+  manifest: z.infer<typeof manifestSchema>,
+  output: string,
+) {
   await mkdir(output, { recursive: true });
   const directory = await mkdtemp(path.resolve(output, "run-"));
   async function save(name: string, value: unknown) {
@@ -73,6 +69,11 @@ async function compare(source: string, output: string) {
           );
         }
       }
+      if (
+        z.object({ event: z.literal("milestone-missed") }).safeParse(lastEvent)
+          .success
+      )
+        return { ...evidence, status: "missed" as const, turns: null };
       const milestone = z
         .object({ event: z.literal("milestone"), turn: z.int().nonnegative() })
         .safeParse(lastEvent);
@@ -120,15 +121,30 @@ async function compare(source: string, output: string) {
     changeInTurns: complete ? candidate.turns - baseline.turns : null,
     replay: "replay.json",
   });
-  if (!complete) process.exitCode = 1;
-  return path.join(directory, "report.json");
+  return {
+    path: path.join(directory, "report.json"),
+    baseline,
+    candidate,
+    complete,
+  };
 }
-try {
-  const [source, output = "benchmark-runs"] = process.argv.slice(2);
-  if (!source)
-    throw new Error("Usage: benchmark <comparison.json> [output directory]");
-  console.log(await compare(source, output));
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
+if (import.meta.main) {
+  try {
+    const [source, output = "benchmark-runs"] = process.argv.slice(2);
+    if (!source)
+      throw new Error("Usage: benchmark <comparison.json> [output directory]");
+    const manifest = manifestSchema.parse(
+      JSON.parse(await readFile(source, "utf8")),
+    );
+    const root = path.dirname(path.resolve(source));
+    manifest.adapter = path.resolve(root, manifest.adapter);
+    for (const build of [manifest.baseline, manifest.candidate])
+      build.build = path.resolve(root, build.build);
+    const result = await compare(manifest, output);
+    console.log(result.path);
+    if (!result.complete) process.exitCode = 1;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
