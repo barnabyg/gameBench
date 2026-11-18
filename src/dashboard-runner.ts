@@ -1,4 +1,3 @@
-import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
   mkdir,
@@ -11,6 +10,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { command, type CommandResult } from "./dashboard-command.ts";
 import { visualReviewSchema } from "./visual-review.ts";
 
 const repositoryName = z
@@ -92,7 +92,6 @@ const githubTimeout = 90 * seconds;
 const checkoutTimeout = 300 * seconds;
 const buildTimeout = 900 * seconds;
 const benchmarkTimeout = 600 * seconds;
-const maxCommandOutput = 16 * 1024 * 1024;
 
 function inside(root: string, target: string) {
   const relative = path.relative(root, target);
@@ -101,83 +100,6 @@ function inside(root: string, target: string) {
     !relative.startsWith(`..${path.sep}`) &&
     !path.isAbsolute(relative)
   );
-}
-
-function terminate(child: ReturnType<typeof spawn>) {
-  if (!child.pid) return;
-  if (process.platform === "win32") {
-    execFile(
-      "taskkill.exe",
-      ["/pid", String(child.pid), "/T", "/F"],
-      {
-        windowsHide: true,
-        timeout: 30 * seconds,
-      },
-      () => {
-        if (child.exitCode === null && child.signalCode === null) child.kill();
-      },
-    );
-  } else {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      child.kill("SIGKILL");
-    }
-  }
-}
-
-type CommandResult = {
-  status: number | null;
-  stdout: string;
-  stderr: string;
-  error?: string;
-};
-function command(
-  executable: string,
-  args: string[],
-  options: { timeout: number; cwd?: string; env?: NodeJS.ProcessEnv },
-) {
-  return new Promise<CommandResult>((resolve) => {
-    const child = spawn(executable, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: process.platform !== "win32",
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
-    let error: string | undefined;
-    let outputBytes = 0;
-    const timer = setTimeout(() => {
-      error = `Timed out after ${options.timeout / seconds} seconds`;
-      terminate(child);
-    }, options.timeout);
-    function collect(stream: "stdout" | "stderr", chunk: string) {
-      if (error) return;
-      outputBytes += Buffer.byteLength(chunk);
-      if (outputBytes > maxCommandOutput) {
-        error = "Command output exceeded 16 MiB";
-        terminate(child);
-        return;
-      }
-      if (stream === "stdout") stdout += chunk;
-      else stderr += chunk;
-    }
-    child.stdout
-      .setEncoding("utf8")
-      .on("data", (chunk: string) => collect("stdout", chunk));
-    child.stderr
-      .setEncoding("utf8")
-      .on("data", (chunk: string) => collect("stderr", chunk));
-    child.once("error", (cause) => {
-      error = cause.message;
-    });
-    child.once("close", (status) => {
-      clearTimeout(timer);
-      resolve({ status, stdout, stderr, error });
-    });
-  });
 }
 
 function assertSuccess(
