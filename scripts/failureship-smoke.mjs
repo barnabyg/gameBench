@@ -9,7 +9,7 @@ const modes = {
   "--save-resume": { command: "save-resume", scenario: "save-resume" },
   "--performance": { command: "performance", scenario: "performance-review" },
 };
-const mode = modes[args[0]];
+const mode = Object.hasOwn(modes, args[0]) ? modes[args[0]] : undefined;
 if (mode) args.shift();
 const { command, scenario } = mode ?? {
   command: "smoke",

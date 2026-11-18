@@ -40,8 +40,22 @@ export async function sampleBrowserPerformance(page: Page) {
     const ready = performance.getEntriesByName("gamebench-ready", "mark")[0];
     if (!ready)
       throw new Error("The month header readiness mark was unavailable.");
-    const nextFrame = () =>
-      new Promise<number>((resolve) => requestAnimationFrame(resolve));
+    const notice = document.querySelector('[data-testid="decided-on-paper"]');
+    const nextFrame = async () => {
+      const timestamp = await new Promise<number>((resolve) =>
+        requestAnimationFrame(resolve),
+      );
+      if (
+        !notice?.checkVisibility({
+          visibilityProperty: true,
+          opacityProperty: true,
+        })
+      )
+        throw new Error(
+          "The first-promotion notice disappeared during frame sampling.",
+        );
+      return timestamp;
+    };
     let previous = await nextFrame();
     const frameMs: number[] = [];
     for (let frame = 0; frame < count; frame++) {
