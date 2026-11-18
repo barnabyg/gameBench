@@ -16,7 +16,8 @@ test("compare matched promotion attempts and surface a design finding without fa
   const playsMove=inputs.strategy==="politics-first" && !inputs.settings.withholdMove;
   if(playsMove)console.log(JSON.stringify({event:"decision",move:"screenshot-on-the-note",step:4}));
   const won=playsMove && (build.endsWith("candidate")||inputs.seed===2);
-  console.log(JSON.stringify(won?{event:"milestone",turn:8}:{event:"milestone-missed"}));
+  if (!playsMove && inputs.settings.withholdMove && inputs.scenario==="company-events")console.log(JSON.stringify({event:"milestone",turn:14}));
+  else console.log(JSON.stringify(won?{event:"milestone",turn:8}:{event:"milestone-missed"}));
  `,
   );
   const manifest = path.join(output, "batch.json");
@@ -60,6 +61,10 @@ test("compare matched promotion attempts and surface a design finding without fa
   const finding = report.findings.find(({ role }) => role === "candidate");
   assert.equal(finding.move, "screenshot-on-the-note");
   assert.equal(finding.scenarios.length, 2);
+  assert.equal(
+    finding.scenarios.find((row) => row.scenario === "company-events").earlier,
+    2,
+  );
   assert.match(finding.playtest.question, /engaging/);
   const evidence = finding.scenarios[0].evidence;
   const log = await readFile(

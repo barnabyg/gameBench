@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import { seedSchema } from "./failureship-seeds.ts";
 
 type Choice = {
   type: string;
@@ -17,7 +18,10 @@ type View = {
   finalWarning: boolean;
 };
 type Engine = {
-  gameContent: { events: { vacates?: unknown }[] };
+  gameContent: {
+    events: { vacates?: unknown }[];
+    project: { statuses: { id: string; label: string }[] };
+  };
   startRun(options: { seed: number; content: Engine["gameContent"] }): {
     view(): View;
     choose(choice: Choice): View;
@@ -31,12 +35,16 @@ const { build, inputs } = z
     inputs: z.object({
       scenario: z.enum(["company-events", "earned-vacancies"]),
       strategy: z.enum(["delivery-first", "politics-first", "adaptive"]),
-      seed: z.int(),
+      seed: seedSchema,
       settings: z.object({ withholdMove: z.string().nullable() }),
     }),
   })
   .parse(JSON.parse(readFileSync(0, "utf8")));
 const engine: Engine = await import(pathToFileURL(build).href);
+const green = engine.gameContent.project.statuses.find(
+  (status) => status.id === "green",
+)?.label;
+if (!green) throw new Error("Build does not define the Green Project status");
 const content =
   inputs.scenario === "earned-vacancies"
     ? {
@@ -49,6 +57,7 @@ const content =
 const run = engine.startRun({ seed: inputs.seed, content });
 const delivery = [
   "take-the-blame",
+  "deliver",
   "ask-analyst-for-figures",
   "load-the-real-figures",
 ];
@@ -77,8 +86,8 @@ for (let step = 1; step <= 1000; step++) {
     throw new Error("Simulation exceeded its 999-choice limit");
   const priority =
     inputs.strategy === "adaptive"
-      ? view.project.real === "Green" &&
-        view.project.reported === "Green" &&
+      ? view.project.real === green &&
+        view.project.reported === green &&
         !view.finalWarning
         ? politics
         : delivery

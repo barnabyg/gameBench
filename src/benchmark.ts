@@ -153,6 +153,7 @@ export async function compare(
     baseline,
     candidate,
     complete,
+    decisions,
   };
 }
 if (import.meta.main) {

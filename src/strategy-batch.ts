@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { compare, buildSchema } from "./benchmark.ts";
+import { seedListSchema } from "./failureship-seeds.ts";
 
 const scenarios = ["company-events", "earned-vacancies"] as const;
 const strategies = ["delivery-first", "politics-first", "adaptive"] as const;
@@ -11,15 +12,14 @@ const schema = z.object({
   adapter: z.string().min(1),
   baseline: buildSchema,
   candidate: buildSchema,
-  seeds: z
-    .array(z.int())
-    .min(1)
-    .max(100)
-    .refine(
-      (seeds) => new Set(seeds).size === seeds.length,
-      "Seeds must be distinct",
-    ),
+  seeds: seedListSchema,
 });
+
+const playtest = {
+  task: "At the Ideas Workshop, try putting a screenshot on the note. Replay the same seed and try a different option, then compare the first vacancy decisions.",
+  question:
+    "Could you explain why the seat was awarded, and was weighing the screenshot against actually doing the work engaging?",
+};
 
 type Outcome = Awaited<ReturnType<typeof compare>>["baseline"];
 function summarize(outcomes: Outcome[]) {
@@ -69,6 +69,14 @@ export async function batch(source: string, output: string) {
       ...inputs,
       withholdMove,
       baseline: result.baseline,
+      moveLine: {
+        baseline: result.decisions.baseline.find(
+          (decision) => decision.move === move,
+        )?.line,
+        candidate: result.decisions.candidate.find(
+          (decision) => decision.move === move,
+        )?.line,
+      },
       candidate: result.candidate,
       report: path.relative(directory, result.path),
     };
@@ -82,6 +90,8 @@ export async function batch(source: string, output: string) {
       better: number;
       worse: number;
       paired: number;
+      earlier: number;
+      later: number;
       evidence: {
         seed: number;
         log: string;
@@ -89,6 +99,7 @@ export async function batch(source: string, output: string) {
         report: string;
         withoutMove: string;
       } | null;
+      playtest?: typeof playtest;
     }[]
   >;
   for (const scenario of scenarios) {
@@ -112,6 +123,8 @@ export async function batch(source: string, output: string) {
         let better = 0;
         let worse = 0;
         let paired = 0;
+        let earlier = 0;
+        let later = 0;
         let evidence = null;
         for (const [index, attempt] of regular.entries()) {
           const control = withheld[index];
@@ -122,38 +135,46 @@ export async function batch(source: string, output: string) {
           )
             continue;
           paired++;
+          const normalTurn = attempt[role].turns;
+          const controlTurn = control[role].turns;
           if (
-            attempt[role].status !== "reached" &&
-            control[role].status === "reached"
-          )
+            controlTurn !== null &&
+            (normalTurn === null || normalTurn > controlTurn)
+          ) {
             worse++;
+            if (normalTurn !== null) later++;
+          }
+          const line = attempt.moveLine[role];
           if (
-            attempt[role].status !== "reached" ||
-            control[role].status === "reached"
+            normalTurn === null ||
+            (controlTurn !== null && normalTurn >= controlTurn) ||
+            line === undefined
           )
             continue;
+          better++;
+          if (controlTurn !== null) earlier++;
           const log = path.join(
             path.dirname(attempt.report),
             attempt[role].log,
           );
-          const lines = (await readFile(path.join(directory, log), "utf8"))
-            .trimEnd()
-            .split("\n");
-          const line = lines.findIndex((text) => {
-            const event = JSON.parse(text);
-            return event.event === "decision" && event.move === move;
-          });
-          if (line < 0) continue;
-          better++;
           evidence ??= {
             seed: attempt.seed,
             log,
-            line: line + 1,
+            line,
             report: attempt.report,
             withoutMove: control.report,
           };
         }
-        effects[role].push({ scenario, better, worse, paired, evidence });
+        effects[role].push({
+          scenario,
+          better,
+          worse,
+          paired,
+          earlier,
+          later,
+          evidence,
+          ...(evidence && better > worse ? { playtest } : {}),
+        });
       }
     }
   }
@@ -175,9 +196,7 @@ export async function batch(source: string, output: string) {
         playtest: {
           scenario: data[0]?.scenario,
           seed: evidence.seed,
-          task: "At the Ideas Workshop, try putting a screenshot on the note. Replay the same seed and try a different option, then compare the first vacancy decisions.",
-          question:
-            "Could you explain why the seat was awarded, and was weighing the screenshot against actually doing the work engaging?",
+          ...playtest,
         },
       },
     ];
