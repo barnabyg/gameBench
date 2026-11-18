@@ -3,6 +3,9 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const args = process.argv.slice(2);
+const visual = args[0] === "--visual";
+if (visual) args.shift();
 const [
   baseline,
   baselineVersion,
@@ -10,10 +13,10 @@ const [
   candidateVersion,
   width = "1280",
   height = "800",
-] = process.argv.slice(2);
+] = args;
 if (!baseline || !baselineVersion || !candidate || !candidateVersion) {
   console.error(
-    "Usage: npm run failureship:smoke -- <baseline dist> <baseline version> <candidate dist> <candidate version> [width] [height]",
+    `Usage: npm run failureship:${visual ? "visual" : "smoke"} -- <baseline dist> <baseline version> <candidate dist> <candidate version> [width] [height]`,
   );
   process.exit(1);
 }
@@ -28,14 +31,23 @@ await writeFile(
     adapter: fileURLToPath(new URL("../src/failureship.ts", import.meta.url)),
     baseline: { build: path.resolve(baseline), version: baselineVersion },
     candidate: { build: path.resolve(candidate), version: candidateVersion },
+    ...(visual
+      ? {
+          visualReview: {
+            width: Number(width),
+            height: Number(height),
+            changedPixelRatio: 0.005,
+          },
+        }
+      : {}),
     inputs: {
-      scenario: "first-promotion",
+      scenario: visual ? "visual-review" : "first-promotion",
       strategy: "seek-team-lead",
       seed: 2,
       settings: {
         width: Number(width),
         height: Number(height),
-        checkLayout: true,
+        checkLayout: !visual,
       },
     },
   }),

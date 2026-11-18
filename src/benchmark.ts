@@ -3,6 +3,7 @@ import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import { layoutSchema } from "./promotion-layout.ts";
+import { reviewVisuals, visualReviewSchema } from "./visual-review.ts";
 import { comparePacing, decisionSchema, type Decision } from "./pacing.ts";
 
 export const buildSchema = z.object({
@@ -13,6 +14,7 @@ const manifestSchema = z.object({
   adapter: z.string().min(1),
   baseline: buildSchema,
   candidate: buildSchema,
+  visualReview: visualReviewSchema.optional(),
   pacing: z.object({ stallAfterSteps: z.int().positive() }).optional(),
   inputs: z.object({
     scenario: z.string().min(1),
@@ -43,11 +45,16 @@ export async function compare(
     const build = manifest[role];
     const screenshot = `${role}-milestone.png`;
     const failureScreenshot = `${role}-failure.png`;
+    const checkpointDirectory = manifest.visualReview
+      ? path.join(directory, role)
+      : undefined;
+    if (checkpointDirectory) await mkdir(checkpointDirectory);
     const result = spawnSync(process.execPath, [manifest.adapter], {
       encoding: "utf8",
       input: JSON.stringify({
         build: build.build,
         inputs: manifest.inputs,
+        checkpointDirectory,
         screenshot: path.join(directory, screenshot),
         failureScreenshot: path.join(directory, failureScreenshot),
       }),
@@ -166,6 +173,14 @@ export async function compare(
     console.error(`Promotion layout check failed. Evidence: ${directory}`);
   await save("report.json", {
     ...(layout ? { layout } : {}),
+    ...(manifest.visualReview
+      ? {
+          visualReview: await reviewVisuals(directory, manifest.visualReview, {
+            baseline: baseline.version,
+            candidate: candidate.version,
+          }),
+        }
+      : {}),
     status: complete ? "complete" : "incomplete",
     inputs: manifest.inputs,
     baseline,

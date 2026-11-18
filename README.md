@@ -69,3 +69,17 @@ An optional manifest field, `pacing.stallAfterSteps`, enables pacing reports. Ad
 The first-promotion command checks the candidate's visible heading, text and Continue button for clipping and overlap. At the configured resolution it measures the panel twice around the screenshot and gates defects found in both samples. The report names both builds and shows each build's findings. A baseline defect is recorded for comparison. The candidate must be clean. Intentional vertical scrolling within the notice is supported. CI runs at 1280×800 and uploads both screenshots even when the layout gate fails.
 
 Adapters that support this gate accept `inputs.settings.checkLayout` and emit a `promotion-layout` event before the milestone, with the measured resolution and findings. Missing or wrong-resolution measurements fail the gate.
+
+## Failureship visual review
+
+From the gameBench root with Node.js 24.13 or later and two Failureship E2E builds, run:
+
+```powershell
+npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run failureship:visual -- C:/builds/baseline/dist BASELINE_SHA C:/builds/candidate/dist CANDIDATE_SHA 1280 800
+```
+
+Open the printed report and find the `visualReview` section. Open the baseline and candidate screenshots listed under each checkpoint. A changed pair includes a diff PNG. By default, the report flags pairs with at least 0.5% changed pixels after pixel matching filters minor colour and anti-aliasing differences. A flag is a prompt for review. Visual changes and optional missing captures do not fail the command. A failed first-promotion run still returns a nonzero exit code with its report and any available captures.
+
+The current Failureship builds close the upper floors for refurbishment. Expect the penthouse row to report missing on both builds and a separate image pair for Floor 3, the highest playable floor. Compare the ground floor with Floor 3 and use the report questions to judge legibility and whether the building looks posher. The visual review runs separately from the promotion layout gate.
+
+For replay, pass the generated manifest to the benchmark command. A `visualReview` manifest supplies the requested resolution and changed-pixel threshold. The runner gives each adapter an absolute `checkpointDirectory` in which to write the named PNGs. Images are paired only when their dimensions match the requested resolution.
