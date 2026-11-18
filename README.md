@@ -33,3 +33,7 @@ npm.cmd run failureship:smoke -- C:/builds/baseline/dist BASELINE_SHA C:/builds/
 Replace the example paths and version identifiers with your builds. The last two arguments are the viewport width and height in pixels. The check opens a fresh browser for each build, starts seed 2 at month 7 using the game's E2E setup, and plays through the promotion decision. Expect the Team lead notice in both screenshots linked by the report. The command exits nonzero if the required outcome fails. The evidence directory includes the replay manifest, action logs, and a screenshot of the failed browser state when it can be captured.
 
 Pull requests run this same command against two pinned Failureship commits. Download the `failureship-first-promotion` artifact from the check to inspect its evidence.
+
+## Incomplete comparisons
+
+If either build exits early or misses the milestone, the runner still attempts both builds and prints the report path before returning a nonzero exit code. The report includes the scenario and seed, both builds' statuses and logs, and counts of attempted, reached, and missing milestones. A missing milestone has a null turn count, and the comparison has a null turn difference.

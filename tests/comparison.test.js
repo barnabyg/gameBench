@@ -67,3 +67,61 @@ test("reject malformed evidence even when the adapter reaches its milestone", as
   assert.equal(result.status, 1);
   assert.match(result.stderr, /baseline\.ndjson.*line 1/);
 });
+
+test("report both outcomes when the baseline exits before its checkpoint", async (t) => {
+  const output = await mkdtemp(
+    path.join(os.tmpdir(), "incomplete comparison "),
+  );
+  t.after(() => rm(output, { recursive: true, force: true }));
+  await writeFile(
+    path.join(output, "adapter.mjs"),
+    `
+    import {readFileSync} from "node:fs";
+    const {build, inputs} = JSON.parse(readFileSync(0,"utf8"));
+    console.log(JSON.stringify({event:"started", seed:inputs.seed}));
+    if (build.endsWith("crashes")) {
+      console.error("controlled crash");
+      process.exit(12);
+    }
+    console.log(JSON.stringify({event:"milestone", turn:7}));
+  `,
+  );
+  const source = path.join(output, "comparison.json");
+  await writeFile(
+    source,
+    JSON.stringify({
+      adapter: "adapter.mjs",
+      baseline: { version: "crashing-build", build: "crashes" },
+      candidate: { version: "healthy-build", build: "works" },
+      inputs: {
+        scenario: "first-promotion",
+        strategy: "seek-team-lead",
+        seed: 23,
+        settings: {},
+      },
+    }),
+  );
+  const result = spawnSync(
+    process.execPath,
+    ["src/benchmark.ts", source, output],
+    { encoding: "utf8", timeout: 420000 },
+  );
+  assert.equal(result.status, 1);
+  const reportPath = result.stdout.trim();
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  assert.equal(report.inputs.seed, 23);
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.changeInTurns, null);
+  assert.deepEqual(report.outcomes, { attempted: 2, reached: 1, missing: 1 });
+  assert.equal(report.baseline.version, "crashing-build");
+  assert.equal(report.baseline.status, "failed");
+  assert.equal(report.baseline.turns, null);
+  assert.match(report.baseline.error, /controlled crash/);
+  assert.equal(report.candidate.status, "reached");
+  assert.equal(report.candidate.turns, 7);
+  const evidence = await readFile(
+    path.join(path.dirname(reportPath), report.baseline.log),
+    "utf8",
+  );
+  assert.deepEqual(JSON.parse(evidence), { event: "started", seed: 23 });
+});
