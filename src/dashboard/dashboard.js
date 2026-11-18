@@ -115,9 +115,12 @@ function priority(report) {
 
 function renderReports() {
   const games = new Map();
+  let reportCount = 0;
   for (const report of reportData) {
+    if (removedRepositories.has(report.repository)) continue;
     if (!games.has(report.game)) games.set(report.game, []);
     games.get(report.game).push(report);
+    reportCount++;
   }
   const rows = [...games].map(([game, history]) => ({
     report:
@@ -126,11 +129,11 @@ function renderReports() {
     history,
   }));
   rows.sort((a, b) => priority(b.report) - priority(a.report));
-  resultCount.textContent = `${rows.length} ${rows.length === 1 ? "game" : "games"} · ${reportData.length} ${reportData.length === 1 ? "report" : "reports"}`;
+  resultCount.textContent = `${rows.length} ${rows.length === 1 ? "game" : "games"} · ${reportCount} ${reportCount === 1 ? "report" : "reports"}`;
   finding.hidden = true;
   if (!rows.length) {
     matrix.replaceChildren(
-      element("p", "No saved reports are loaded.", "empty"),
+      element("p", "No benchmark results to show.", "empty"),
     );
     return;
   }
@@ -176,6 +179,19 @@ function renderReports() {
       });
       label.append(historyPicker);
     } else label.append(element("small", report.inputs.scenario));
+    const repository = history.find((item) => item.repository)?.repository;
+    if (repository) {
+      const remove = element("button", "Remove", "plain-button remove-repo");
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Remove ${repository}`);
+      remove.addEventListener("click", () => {
+        updateSelection(repository, false);
+        setRepositoryRemoved(repository, true);
+        if (repositories) renderRepositories();
+        chooseRepos.focus();
+      });
+      label.append(remove);
+    }
     row.append(label);
     for (const area of areas) {
       const check = report.checks[area];
@@ -230,6 +246,7 @@ function openReport(id) {
 }
 
 const repositoryPanel = document.querySelector("#repositories");
+const chooseRepos = document.querySelector("#choose-repos");
 const repositorySearch = document.querySelector("#repository-search");
 const repositoryStatus = document.querySelector("#repository-status");
 const repositoryList = document.querySelector("#repository-list");
@@ -244,16 +261,50 @@ const buildSmokeRepositories = document.querySelector(
 );
 let pendingSmokeApproval = [];
 const selectionKey = "gamebench.selected";
+const removedKey = "gamebench.removed";
 let repositories;
-const selected = new Set();
+const selected = new Set(storedNames(selectionKey));
+const removedRepositories = new Set(storedNames(removedKey));
 const selectedBranches = new Map();
 const branchLookups = new Map();
 let running = false;
 let submitting = false;
+let latestRuns = [];
 let shownRuns;
 let pollTimer;
 let pollVersion = 0;
 let retryDelay = 700;
+
+function storedNames(key) {
+  let saved;
+  try {
+    saved = localStorage.getItem(key);
+    if (!saved) return [];
+    const names = JSON.parse(saved);
+    return Array.isArray(names) ? names : [];
+  } catch {
+    return saved ? [saved] : [];
+  }
+}
+
+function updateSelection(repository, checked) {
+  if (checked) selected.add(repository);
+  else {
+    selected.delete(repository);
+    selectedBranches.delete(repository);
+    branchLookups.delete(repository);
+  }
+  localStorage.setItem(selectionKey, JSON.stringify([...selected]));
+  enableRun();
+}
+
+function setRepositoryRemoved(repository, removed) {
+  if (removed) removedRepositories.add(repository);
+  else removedRepositories.delete(repository);
+  localStorage.setItem(removedKey, JSON.stringify([...removedRepositories]));
+  renderReports();
+  renderRuns(latestRuns);
+}
 
 async function api(route, options) {
   const response = await fetch(route, options);
@@ -348,17 +399,14 @@ function renderRepositories() {
       controls.append(status);
       if (checkbox.checked && repo.ready) controls.append(branchPicker(repo));
       checkbox.addEventListener("change", () => {
+        updateSelection(repo.fullName, checkbox.checked);
         if (checkbox.checked) {
-          selected.add(repo.fullName);
           if (repo.ready) controls.append(branchPicker(repo));
+          if (removedRepositories.has(repo.fullName))
+            setRepositoryRemoved(repo.fullName, false);
         } else {
-          selected.delete(repo.fullName);
-          selectedBranches.delete(repo.fullName);
-          branchLookups.delete(repo.fullName);
           controls.querySelector(".branch-picker")?.remove();
         }
-        localStorage.setItem(selectionKey, JSON.stringify([...selected]));
-        enableRun();
       });
       row.append(label, controls);
       return row;
@@ -388,18 +436,6 @@ repositoryPanel.addEventListener("toggle", async () => {
   repositoryStatus.textContent = "Loading GitHub repositories…";
   try {
     repositories = await api("/api/repositories");
-    const saved = localStorage.getItem(selectionKey);
-    if (saved) {
-      let names;
-      try {
-        names = JSON.parse(saved);
-      } catch {
-        names = [saved];
-      }
-      if (Array.isArray(names)) {
-        for (const name of names) selected.add(name);
-      }
-    }
     renderRepositories();
   } catch (error) {
     repositoryStatus.textContent = `${error.message} Close and reopen the picker to retry.`;
@@ -409,12 +445,13 @@ repositorySearch.addEventListener(
   "input",
   () => repositories && renderRepositories(),
 );
-document.querySelector("#choose-repos").addEventListener("click", () => {
+chooseRepos.addEventListener("click", () => {
   repositoryPanel.open = true;
 });
 
 function renderRuns(jobs) {
-  const snapshot = JSON.stringify(jobs);
+  latestRuns = jobs;
+  const snapshot = JSON.stringify([jobs, [...removedRepositories]]);
   if (snapshot === shownRuns) return;
   shownRuns = snapshot;
   runSection.hidden = !jobs.length;
@@ -431,7 +468,10 @@ function renderRuns(jobs) {
       const controls = element("div", undefined, "run-controls");
       controls.dataset.status = job.status;
       controls.append(badge);
-      for (const id of job.reportIds) {
+      const reportIds = removedRepositories.has(job.repository)
+        ? []
+        : job.reportIds;
+      for (const id of reportIds) {
         const link = element("a", "Open report");
         link.href = `#report-${id}`;
         link.addEventListener("click", () => openReport(id));

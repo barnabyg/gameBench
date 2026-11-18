@@ -224,6 +224,11 @@ tbody tr:hover {
   background: var(--white);
   color: var(--ink);
 }
+.remove-repo {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+}
 .run-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));

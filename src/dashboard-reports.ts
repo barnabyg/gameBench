@@ -188,7 +188,7 @@ export async function loadReport(
   game: string,
   source: string,
   id: string,
-  branch?: string,
+  repositoryRun?: { repository: string; branch: string },
 ) {
   const filename = await realpath(source);
   const directory = path.dirname(filename);
@@ -217,7 +217,8 @@ export async function loadReport(
     data: {
       id,
       game,
-      branch,
+      repository: repositoryRun?.repository,
+      branch: repositoryRun?.branch,
       kind: "inputs" in report ? report.kind : undefined,
       checks,
       visualThreshold,

@@ -36,6 +36,8 @@ npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run dashboard
 
 Open the printed URL, expand GitHub repositories, and search for Failureship. Check the Ready repository and choose **Run selected**. The dashboard builds the latest default-branch commit and the pinned baseline with the same settings. Once the run finishes, choose **Open report** to inspect the outcome and evidence. Reopening the dashboard on the same local URL remembers checked repositories. Completed reports and their replay files are retained under `benchmark-runs/`.
 
+To remove a repository from **Benchmark results**, choose **Remove** beside its name. It returns to the GitHub repositories checklist unchecked and stays unchecked when you reload the same local URL. Check it again to show its saved results and use the default candidate branch for the next run.
+
 The dashboard runs build commands from trusted repositories on this machine. The built-in recipes cover `barnabyg/failureship` and `barnabyg/growOrDie`. Other repositories can start with [build smoke](#run-build-smoke-for-a-new-repository) or use a [trusted local gameplay recipe](#set-up-a-repository-on-its-first-run).
 
 To check that search and selection work independently, use the same launch command from the gameBench root. Check Failureship, then enter a search that hides it. The selection count still shows **1 selected**. Choose **Run selected** in the selection controls below the repository list and expect a Failureship run.
