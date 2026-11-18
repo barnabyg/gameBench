@@ -233,6 +233,7 @@ const selectionCount = document.querySelector("#selection-count");
 const runSelected = document.querySelector("#run-selected");
 const runSection = document.querySelector("#runs");
 const runList = document.querySelector("#run-list");
+const showRuns = document.querySelector("#show-runs");
 const selectionKey = "gamebench.selected";
 let repositories;
 const selected = new Set();
@@ -412,6 +413,7 @@ function renderRuns(jobs) {
   if (snapshot === shownRuns) return;
   shownRuns = snapshot;
   runSection.hidden = !jobs.length;
+  showRuns.hidden = runSection.hidden;
   runList.replaceChildren(
     ...jobs.map((job) => {
       const entry = element("li");

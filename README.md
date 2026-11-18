@@ -40,6 +40,8 @@ The dashboard runs build commands from configured game repositories on this mach
 
 To check that search and selection work independently, use the same launch command from the gameBench root. Check Failureship, then enter a search that hides it. The selection count still shows **1 selected**. Choose **Run selected** in the selection controls below the repository list and expect a Failureship run.
 
+To check the dashboard layout, use the same launch command from the gameBench root with a completed run in the default output directory. Expand **GitHub repositories** with enough accessible repositories to scroll the list, then start a benchmark. At the top of the page, **Benchmark results** appears beside the controls on wide windows and above them on narrow windows. Reduce the window height and check that the results and a finding are still reachable. Use **Runs** in the header to jump to run progress and **Open report** to return to a result.
+
 ### Run both games and check partial results
 
 Use the same launch command and select Failureship and Grow or Die before choosing **Run selected**. Expect independent progress for each game. Open the Grow or Die report to check that the seeded first harvest reached year 2 with 600 t of grain stored. The report lists the commit IDs, scenario, strategy, settings, and seed.

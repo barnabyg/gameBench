@@ -99,10 +99,48 @@ test(
     assert.match(first.value ?? "", /^http:\/\/127\.0\.0\.1:\d+\/$/);
     const browser = await chromium.launch();
     context.after(() => browser.close());
-    const page = await browser.newPage();
+    const page = await browser.newPage({
+      viewport: { width: 1440, height: 860 },
+    });
+    await page.route("**/api/repositories", (route) =>
+      route.fulfill({
+        json: Array.from({ length: 40 }, (_, index) => ({
+          fullName: `fixtures/game-${index + 1}`,
+          defaultBranch: "main",
+          ready: true,
+        })),
+      }),
+    );
+    await page.route("**/api/runs", (route) =>
+      route.fulfill({
+        json: Array.from({ length: 20 }, (_, index) => ({
+          id: String(index),
+          repository: `fixtures/game-${index + 1}`,
+          branch: "main",
+          status: "Passed",
+          message: "Benchmark complete.",
+          reportIds: [],
+        })),
+      }),
+    );
     await page.goto(first.value);
     const rows = page.getByRole("rowheader");
     await rows.first().waitFor();
+    const repositoryPicker = page.getByText("GitHub repositories", {
+      exact: true,
+    });
+    await repositoryPicker.click();
+    await page.getByRole("checkbox", { name: "fixtures/game-40" }).waitFor();
+    await page.getByRole("heading", { name: "Benchmark runs" }).waitFor();
+    for (const viewport of [
+      { width: 1440, height: 540 },
+      { width: 740, height: 540 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const firstRow = await rows.first().boundingBox();
+      assert.ok(firstRow && firstRow.y + firstRow.height <= viewport.height);
+    }
     assert.deepEqual(await rows.allTextContents(), [
       "Regressionfirst-delivery",
       "New layout defectfirst-delivery",
