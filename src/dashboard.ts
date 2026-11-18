@@ -39,7 +39,9 @@ const reports = await Promise.all(
 );
 const jobs = new DashboardJobs(values.config, path.resolve(values.output));
 await jobs.restore();
-const runRequest = z.object({ repository: z.string().min(1) });
+const runRequest = z.object({
+  repositories: z.array(z.string().min(1)).min(1),
+});
 const assets = {
   "/": ["index.html", "text/html; charset=utf-8"],
   "/dashboard.css": ["dashboard.css", "text/css; charset=utf-8"],
@@ -110,8 +112,9 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
         error: "Start the run from the local dashboard.",
       });
     const body = await readRunRequest(request);
-    if (!body) return send(response, 400, { error: "Select a repository." });
-    const result = await jobs.start(body.repository);
+    if (!body)
+      return send(response, 400, { error: "Select one or more repositories." });
+    const result = await jobs.start(body.repositories);
     return send(response, result.status, result);
   }
   if (request.method !== "GET")

@@ -70,6 +70,22 @@ const failureship: Recipe = {
     visualReview: { width: 1280, height: 800, changedPixelRatio: 0.005 },
   },
 };
+const growOrDie: Recipe = {
+  repository: "barnabyg/growOrDie",
+  // biome-ignore lint/security/noSecrets: Public Git revision pinned for the first-harvest benchmark. Revisit if this baseline changes.
+  baseline: "0795b888812d5bfa45244062b63ec3fba1994652",
+  build: { args: [], output: "." },
+  comparison: {
+    adapter: fileURLToPath(new URL("./grow-or-die.ts", import.meta.url)),
+    inputs: {
+      scenario: "first-harvest",
+      strategy: "store-surplus",
+      seed: 29,
+      settings: {},
+    },
+    pacing: { stallAfterSteps: 5 },
+  },
+};
 
 const seconds = 1_000;
 const githubTimeout = 90 * seconds;
@@ -251,7 +267,12 @@ export class DashboardRunner {
   }
 
   private async games() {
-    const games = new Map([[failureship.repository, failureship]]);
+    const games = new Map(
+      [failureship, growOrDie].map((game) => [
+        game.repository.toLowerCase(),
+        game,
+      ]),
+    );
     if (this.configPath) {
       const directory = path.dirname(this.configPath);
       const config = z

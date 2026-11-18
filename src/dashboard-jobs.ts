@@ -56,7 +56,7 @@ export class DashboardJobs {
     return this.runner.repositories();
   }
 
-  async start(repository: string) {
+  async start(repositories: string[]) {
     if (this.active)
       return {
         status: 409,
@@ -65,25 +65,41 @@ export class DashboardJobs {
     this.active = true;
     try {
       const catalog = await this.repositories();
-      const selection = catalog.find(
-        (item) => item.fullName === repository && item.ready,
+      const ready = new Map(
+        catalog
+          .filter((item) => item.ready)
+          .map((item) => [item.fullName, item]),
       );
-      if (!selection) {
+      const selections = [...new Set(repositories)].flatMap((name) => {
+        const repo = ready.get(name);
+        return repo ? [repo] : [];
+      });
+      if (selections.length !== repositories.length) {
         this.active = false;
-        return { status: 400, error: "Select a repository marked Ready." };
+        return {
+          status: 400,
+          error: "Select distinct repositories marked Ready.",
+        };
       }
-      const job: Job = {
-        id: randomUUID(),
-        repository,
-        status: "Running",
-        message: "Preparing benchmark.",
-        reportIds: [],
-      };
-      this.jobs.unshift(job);
-      void this.run(job, selection.defaultBranch).finally(() => {
+      const jobs = selections.map(
+        ({ fullName: repository, defaultBranch }) => ({
+          branch: defaultBranch,
+          job: {
+            id: randomUUID(),
+            repository,
+            status: "Running",
+            message: "Preparing benchmark.",
+            reportIds: [],
+          } satisfies Job,
+        }),
+      );
+      this.jobs.unshift(...jobs.map(({ job }) => job));
+      void Promise.all(
+        jobs.map(({ job, branch }) => this.run(job, branch)),
+      ).finally(() => {
         this.active = false;
       });
-      return { status: 202, job };
+      return { status: 202, jobs: jobs.map(({ job }) => job) };
     } catch (error) {
       this.active = false;
       throw error;

@@ -152,7 +152,7 @@ const runSection = document.querySelector("#runs");
 const runList = document.querySelector("#run-list");
 const selectionKey = "gamebench.selected";
 let repositories;
-let selected;
+const selected = new Set();
 let running = false;
 let shownRuns;
 
@@ -176,14 +176,12 @@ function renderRepositories() {
       const checkbox = element("input");
       checkbox.type = "checkbox";
       checkbox.disabled = !repo.ready;
-      checkbox.checked = selected === repo.fullName && repo.ready;
+      checkbox.checked = selected.has(repo.fullName) && repo.ready;
       checkbox.addEventListener("change", () => {
-        selected = checkbox.checked ? repo.fullName : "";
-        localStorage.setItem(selectionKey, selected);
-        renderRepositories();
-        repositoryList
-          .querySelector(`input[value="${CSS.escape(repo.fullName)}"]`)
-          ?.focus();
+        if (checkbox.checked) selected.add(repo.fullName);
+        else selected.delete(repo.fullName);
+        localStorage.setItem(selectionKey, JSON.stringify([...selected]));
+        enableRun();
       });
       checkbox.value = repo.fullName;
       const label = element("label");
@@ -201,10 +199,15 @@ function renderRepositories() {
   enableRun();
 }
 
+function readySelection() {
+  return (
+    repositories?.filter((repo) => repo.ready && selected.has(repo.fullName)) ??
+    []
+  );
+}
+
 function enableRun() {
-  runSelected.disabled =
-    running ||
-    !repositories?.some((repo) => repo.ready && repo.fullName === selected);
+  runSelected.disabled = running || !readySelection().length;
 }
 
 repositoryPanel.addEventListener("toggle", async () => {
@@ -212,7 +215,18 @@ repositoryPanel.addEventListener("toggle", async () => {
   repositoryStatus.textContent = "Loading GitHub repositories…";
   try {
     repositories = await api("/api/repositories");
-    selected = localStorage.getItem(selectionKey);
+    const saved = localStorage.getItem(selectionKey);
+    if (saved) {
+      let names;
+      try {
+        names = JSON.parse(saved);
+      } catch {
+        names = [saved];
+      }
+      if (Array.isArray(names)) {
+        for (const name of names) selected.add(name);
+      }
+    }
     renderRepositories();
   } catch (error) {
     repositoryStatus.textContent = `${error.message} Close and reopen the picker to retry.`;
@@ -282,7 +296,9 @@ runSelected.addEventListener("click", async () => {
     await api("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repository: selected }),
+      body: JSON.stringify({
+        repositories: readySelection().map((repo) => repo.fullName),
+      }),
     });
     await checkRuns();
   } catch (error) {

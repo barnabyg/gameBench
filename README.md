@@ -22,7 +22,37 @@ npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run dashboard
 
 Open the printed URL, expand GitHub repositories, and search for Failureship. Check the Ready repository and choose **Run selected**. The dashboard builds the latest default-branch commit and the pinned baseline with the same settings. Once the run finishes, choose **Open report** to inspect the outcome and evidence. Reopening the dashboard on the same local URL remembers checked repositories. Completed reports and their replay files are retained under `benchmark-runs/`.
 
-The dashboard runs build commands from configured game repositories on this machine. The built-in recipe trusts `barnabyg/failureship`. Repositories without a local recipe cannot run.
+The dashboard runs build commands from configured game repositories on this machine. The built-in recipes trust `barnabyg/failureship` and `barnabyg/growOrDie`. Repositories without a local recipe cannot run.
+
+### Run both games and check partial results
+
+Use the same launch command and select Failureship and Grow or Die before choosing **Run selected**. Expect independent progress for each game. Open the Grow or Die report to check that the seeded first harvest reached year 2 with 600 t of grain stored. The report lists the commit IDs, scenario, strategy, settings, and seed.
+
+To exercise a build failure, save the following as `dashboard-failure.json` in the gameBench root and append `-- --config dashboard-failure.json` to the dashboard launch command. Select both games again. Grow or Die should show a build error while Failureship produces an openable report. This config overrides only the named game's recipe.
+
+```json
+{
+  "games": [
+    {
+      "repository": "barnabyg/growOrDie",
+      "baseline": "0795b888812d5bfa45244062b63ec3fba1994652",
+      "build": {
+        "args": ["--intentionally-invalid-benchmark-option"],
+        "output": "."
+      },
+      "comparison": {
+        "adapter": "src/grow-or-die.ts",
+        "inputs": {
+          "scenario": "first-harvest",
+          "strategy": "store-surplus",
+          "seed": 29,
+          "settings": {}
+        }
+      }
+    }
+  ]
+}
+```
 
 ## Try the comparison
 
