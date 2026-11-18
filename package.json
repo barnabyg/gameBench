@@ -13,6 +13,7 @@
     "verify": "prettier --check . && biome lint --error-on-warnings . && tsc --noEmit && npm test && npm audit --audit-level=low && npm pack --dry-run",
     "failureship:smoke": "node scripts/failureship-smoke.mjs",
     "failureship:save-resume": "node scripts/failureship-smoke.mjs --save-resume",
+    "failureship:performance": "node scripts/failureship-smoke.mjs --performance",
     "strategy:batch": "node src/strategy-batch.ts",
     "failureship:strategies": "node src/prepare-strategy-batch.ts",
     "failureship:visual": "node scripts/failureship-smoke.mjs --visual"

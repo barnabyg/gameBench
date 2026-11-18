@@ -6,6 +6,10 @@ import { once } from "node:events";
 import { type Browser, chromium, type Page } from "playwright";
 import sirv from "sirv";
 import { z } from "zod";
+import {
+  markBrowserStartup,
+  sampleBrowserPerformance,
+} from "./performance-review.ts";
 import { inspectPromotion } from "./promotion-layout.ts";
 import { verifySaveResume } from "./save-resume.ts";
 import { checkpoints, checkpointFile } from "./visual-checkpoints.ts";
@@ -27,7 +31,12 @@ const {
       .object({ width: z.int().positive(), height: z.int().positive() })
       .optional(),
     inputs: z.object({
-      scenario: z.enum(["first-promotion", "visual-review", "save-resume"]),
+      scenario: z.enum([
+        "first-promotion",
+        "visual-review",
+        "save-resume",
+        "performance-review",
+      ]),
       strategy: z.enum(["seek-team-lead", "answer-and-resume"]),
       seed: z.int(),
       settings: z.object({
@@ -235,6 +244,8 @@ try {
       if (inputs.scenario === "save-resume") {
         await runSaveResume(page, origin);
       } else {
+        if (inputs.scenario === "performance-review")
+          await markBrowserStartup(page);
         await openGame(page, origin, {
           month: "7",
           choose: "take-the-blame,screenshot-on-the-note,word-with-the-analyst",
@@ -246,6 +257,8 @@ try {
           .waitFor({ timeout: 15000 });
         await reachPromotion(page);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
+        if (inputs.scenario === "performance-review")
+          event(await sampleBrowserPerformance(page));
         const first = inputs.settings.checkLayout
           ? await inspectPromotion(page)
           : [];

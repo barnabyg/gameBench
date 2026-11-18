@@ -4,10 +4,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
-const visual = args[0] === "--visual";
-const saveResume = args[0] === "--save-resume";
-if (visual || saveResume) args.shift();
-const command = visual ? "visual" : saveResume ? "save-resume" : "smoke";
+const modes = {
+  "--visual": { command: "visual", scenario: "visual-review" },
+  "--save-resume": { command: "save-resume", scenario: "save-resume" },
+  "--performance": { command: "performance", scenario: "performance-review" },
+};
+const mode = modes[args[0]];
+if (mode) args.shift();
+const { command, scenario } = mode ?? {
+  command: "smoke",
+  scenario: "first-promotion",
+};
 const [
   baseline,
   baselineVersion,
@@ -33,8 +40,9 @@ await writeFile(
     adapter: fileURLToPath(new URL("../src/failureship.ts", import.meta.url)),
     baseline: { build: path.resolve(baseline), version: baselineVersion },
     candidate: { build: path.resolve(candidate), version: candidateVersion },
-    ...(saveResume ? { saveResume: true } : {}),
-    ...(visual
+    ...(command === "save-resume" ? { saveResume: true } : {}),
+    ...(command === "performance" ? { performance: { spikeAfterMs: 50 } } : {}),
+    ...(command === "visual"
       ? {
           visualReview: {
             width: Number(width),
@@ -44,17 +52,14 @@ await writeFile(
         }
       : {}),
     inputs: {
-      scenario: visual
-        ? "visual-review"
-        : saveResume
-          ? "save-resume"
-          : "first-promotion",
-      strategy: saveResume ? "answer-and-resume" : "seek-team-lead",
+      scenario,
+      strategy:
+        command === "save-resume" ? "answer-and-resume" : "seek-team-lead",
       seed: 2,
       settings: {
         width: Number(width),
         height: Number(height),
-        checkLayout: !visual && !saveResume,
+        checkLayout: command === "smoke",
       },
     },
   }),

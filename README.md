@@ -112,6 +112,16 @@ npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run failureship:sav
 
 Use builds produced with `npm.cmd run build -- --mode e2e` in the respective Failureship checkouts. The scenario answers a notification in month 7, reloads without the setup parameters, checks that the month, inbox count and answer result are restored, then presses Continue and checks that play advances. Open the printed report and inspect both builds under `saveResume`. Each result links to its log and any captured screenshot. A failure identifies the step and affected build and makes the command exit nonzero. Run the benchmark with the linked `replay.json` to repeat the same check.
 
+## Failureship performance review
+
+From the gameBench root in PowerShell 7, use the same two Failureship E2E builds:
+
+```powershell
+npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run failureship:performance -- C:/builds/baseline/dist BASELINE_SHA C:/builds/candidate/dist CANDIDATE_SHA
+```
+
+Open the printed report and inspect `performance`. It shows navigation to the month 7 header and 60 consecutive animation-frame intervals while the first-promotion notice is visible, in milliseconds. Both builds use seed 2 and the same viewport. Compare the startup and longest-frame changes, then follow the build log and line for the raw sample. Frames at or above 50 ms are flagged for review. An incomplete sample fails the command. Measured differences and spikes leave the command passing. Compare results on the same machine under similar load, since browser scheduling affects both measurements. Saved performance and save-and-resume reports can also be opened in the dashboard’s Stability column.
+
 ## Failureship strategy batch
 
 From the gameBench root, with Node.js 24.13 or later and two clean Failureship Git checkouts at the revisions to compare with dependencies installed by `npm.cmd ci` in each, run:
