@@ -2,6 +2,16 @@
 
 Compare a candidate build with a baseline under the same scenario, strategy, settings, and random seed. This first slice includes a controlled delivery scenario.
 
+## Inspect a saved run in the dashboard
+
+From the gameBench root in PowerShell 7 with Node.js 24.13 or later and a saved Failureship visual report, run:
+
+```powershell
+npm.cmd ci && npm.cmd run dashboard -- --report 'Failureship=C:/path/to/saved/run/report.json'
+```
+
+Use the report path printed by the Failureship visual review. Open the local URL the dashboard prints and select the Visuals cell for Failureship. Compare the baseline and candidate captures at a checkpoint and open the visual diff when available. The Stability cell links the milestone screenshots and build logs. Areas without measurements are labelled **Not measured**.
+
 ## Try the comparison
 
 From the repository root in PowerShell 7 with Node.js 24.13 or later, run:

@@ -1,0 +1,232 @@
+:root {
+  color: #19262e;
+  background: #f1f4f1;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-synthesis: none;
+  --ink: #19262e;
+  --muted: #54656b;
+  --border: #d6e0dc;
+  --accent: #155e4c;
+  --white: #fff;
+}
+
+* {
+  box-sizing: border-box;
+}
+[hidden] {
+  display: none;
+}
+body {
+  margin: 0;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+}
+a {
+  color: var(--accent);
+  text-underline-offset: 0.2em;
+}
+:focus-visible {
+  outline: 3px solid #06755e;
+  outline-offset: 3px;
+}
+
+.shell {
+  width: min(90rem, 100% - 3rem);
+  margin-inline: auto;
+}
+.site-header {
+  background: #142d2b;
+  color: #fff;
+}
+.site-header .shell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 4rem;
+  gap: 1.25rem;
+}
+.site-header a {
+  color: #e3efeb;
+}
+.wordmark {
+  text-decoration: none;
+  font-size: 1.4rem;
+  letter-spacing: -0.05em;
+  font-weight: 750;
+}
+.wordmark span {
+  color: #9ce3bf;
+}
+
+main {
+  padding-block: clamp(2rem, 5vw, 4rem);
+}
+.section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+.section-heading p {
+  margin: 0;
+  color: var(--muted);
+}
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+h1 {
+  font-size: clamp(2rem, 6vw, 3.5rem);
+}
+h2 {
+  font-size: clamp(1.4rem, 4vw, 2rem);
+}
+
+#matrix {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--white);
+}
+table {
+  width: 100%;
+  border-spacing: 0;
+  min-width: 40rem;
+}
+th,
+td {
+  text-align: start;
+  padding: 0.8rem 0.6rem;
+}
+thead th {
+  color: var(--muted);
+  background: #f9fbf9;
+  font-size: 0.82rem;
+}
+tbody th,
+tbody td {
+  border-top: 1px solid var(--border);
+}
+th:first-child {
+  padding-inline: 1.125rem;
+}
+tbody tr:hover {
+  background: #f8faf8;
+}
+.game strong,
+.game small {
+  display: block;
+}
+.game small {
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 0.15rem;
+}
+.check {
+  border: 0;
+  background: transparent;
+  text-align: start;
+  padding: 0.2rem;
+  border-radius: 0.375rem;
+}
+.check:hover,
+.check[aria-expanded="true"] {
+  background: #e6efeb;
+}
+.status {
+  display: inline-block;
+  border-radius: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  padding: 0.3rem 0.55rem;
+  white-space: nowrap;
+}
+[data-status="Passed"] .status {
+  background: #d9f0e4;
+  color: #155846;
+}
+[data-status="Review"] .status {
+  background: #faedc9;
+  color: #66440b;
+}
+[data-status="Failed"] .status {
+  background: #f9dfdb;
+  color: #8b291d;
+}
+[data-status="Not measured"] .status {
+  background: #eaeef0;
+  color: #4a5a62;
+}
+.empty {
+  padding: 0.5rem 1rem;
+  color: var(--muted);
+}
+
+#finding {
+  margin-top: 1.25rem;
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: 0.75rem;
+  background: var(--white);
+}
+.plain-button {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  background: var(--white);
+  color: var(--ink);
+}
+.run-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1rem;
+  border-radius: 0.5rem;
+  background: #f2f6f4;
+  padding: 1rem;
+}
+.run-details dt {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.run-details dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+.finding {
+  border-top: 1px solid var(--border);
+  padding-bottom: 0.75rem;
+}
+.previews {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.75rem;
+}
+.previews a {
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+}
+.previews img {
+  width: 100%;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border);
+}
+.evidence-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 40rem) {
+  .shell {
+    width: calc(100% - 1.5rem);
+  }
+}

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>gameBench</title>
+    <link rel="stylesheet" href="/dashboard.css" />
+    <script type="module" src="/dashboard.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell">
+        <a class="wordmark" href="/">game<span>Bench</span></a>
+        <a href="#results">Results</a>
+      </div>
+    </header>
+    <main class="shell">
+      <section id="results" aria-labelledby="results-title">
+        <div class="section-heading">
+          <h1 id="results-title">Benchmark results</h1>
+          <p id="result-count" role="status"></p>
+        </div>
+        <div id="matrix"></div>
+        <section id="finding" hidden tabindex="-1"></section>
+      </section>
+    </main>
+  </body>
+</html>
