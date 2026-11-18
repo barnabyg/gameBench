@@ -74,3 +74,66 @@ test("report changes and missing checkpoints without failing the visual review",
     ),
   );
 });
+
+test("capture the three playable checkpoints through the Failureship browser adapter", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "browser checkpoints "));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(
+    path.join(root, "index.html"),
+    `<!doctype html><title>Checkpoint fixture</title><body><script>
+  const month = new URLSearchParams(location.search).get("month");
+  if (month === "7") document.body.innerHTML = '<span data-testid="month">7 of 18</span><section data-testid="panel-notice">Congratulations: Team lead<p data-testid="decided-on-paper">Standing</p></section>';
+  else if (month === "12") document.body.innerHTML = '<h1 data-testid="job-title">Middle manager</h1><button data-testid="hotspot-work-3">Corner office</button><section data-testid="panel-notice">Congratulations: Middle manager<button data-testid="continue" onclick="this.parentNode.remove()">Continue</button></section>';
+  else document.body.innerHTML = '<h1 data-testid="job-title">Junior employee</h1><button data-testid="hotspot-work">Desk</button>';
+ </script>`,
+  );
+  const manifest = path.join(root, "comparison.json");
+  await writeFile(
+    manifest,
+    JSON.stringify({
+      adapter: path.resolve("src/failureship.ts"),
+      baseline: { build: root, version: "base" },
+      candidate: { build: root, version: "new" },
+      inputs: {
+        scenario: "visual-review",
+        strategy: "seek-team-lead",
+        seed: 2,
+        settings: { width: 320, height: 200 },
+      },
+      visualReview: { width: 640, height: 400, changedPixelRatio: 0.005 },
+    }),
+  );
+  const file = execFileSync(
+    process.execPath,
+    ["src/benchmark.ts", manifest, root],
+    { encoding: "utf8", timeout: 420000 },
+  ).trim();
+  const report = JSON.parse(await readFile(file, "utf8"));
+  assert.deepEqual(
+    report.visualReview.checkpoints.map(({ checkpoint, status }) => [
+      checkpoint,
+      status,
+    ]),
+    [
+      ["ground-floor", "matched"],
+      ["promotion", "matched"],
+      ["penthouse", "missing"],
+      ["top-floor", "matched"],
+    ],
+  );
+  const logs = (
+    await readFile(path.join(path.dirname(file), report.candidate.log), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(logs[0].event, "launch");
+  assert.equal(logs.at(-1).event, "milestone");
+  const png = await readFile(
+    path.join(
+      path.dirname(file),
+      report.visualReview.checkpoints[0].candidate.screenshot,
+    ),
+  );
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [640, 400]);
+});

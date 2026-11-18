@@ -55,6 +55,10 @@ export async function compare(
         build: build.build,
         inputs: manifest.inputs,
         checkpointDirectory,
+        checkpointResolution: manifest.visualReview && {
+          width: manifest.visualReview.width,
+          height: manifest.visualReview.height,
+        },
         screenshot: path.join(directory, screenshot),
         failureScreenshot: path.join(directory, failureScreenshot),
       }),

@@ -82,4 +82,4 @@ Open the printed report and find the `visualReview` section. Open the baseline a
 
 The current Failureship builds close the upper floors for refurbishment. Expect the penthouse row to report missing on both builds and a separate image pair for Floor 3, the highest playable floor. Compare the ground floor with Floor 3 and use the report questions to judge legibility and whether the building looks posher. The visual review runs separately from the promotion layout gate.
 
-For replay, pass the generated manifest to the benchmark command. A `visualReview` manifest supplies the requested resolution and changed-pixel threshold. The runner gives each adapter an absolute `checkpointDirectory` in which to write the named PNGs. Images are paired only when their dimensions match the requested resolution.
+For replay, pass the generated manifest to the benchmark command. A `visualReview` manifest supplies the requested resolution and changed-pixel threshold. The runner gives each adapter a `checkpointResolution` for capture and an absolute `checkpointDirectory` in which to write the named PNGs. Images are paired only when their dimensions match the requested resolution.

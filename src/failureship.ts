@@ -9,12 +9,22 @@ import { z } from "zod";
 import { inspectPromotion } from "./promotion-layout.ts";
 import { checkpoints, checkpointFile } from "./visual-checkpoints.ts";
 
-const { build, screenshot, failureScreenshot, checkpointDirectory, inputs } = z
+const {
+  build,
+  screenshot,
+  failureScreenshot,
+  checkpointDirectory,
+  checkpointResolution,
+  inputs,
+} = z
   .object({
     build: z.string(),
     screenshot: z.string(),
     failureScreenshot: z.string(),
     checkpointDirectory: z.string().optional(),
+    checkpointResolution: z
+      .object({ width: z.int().positive(), height: z.int().positive() })
+      .optional(),
     inputs: z.object({
       scenario: z.enum(["first-promotion", "visual-review"]),
       strategy: z.literal("seek-team-lead"),
@@ -75,7 +85,7 @@ async function reachPromotion(page: Page) {
   );
 }
 
-const viewport = {
+const viewport = checkpointResolution ?? {
   width: inputs.settings.width,
   height: inputs.settings.height,
 };
@@ -126,8 +136,9 @@ async function captureFloors(browser: Browser, origin: URL, directory: string) {
     },
   ];
   for (const floor of floors) {
-    const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
+    let page: Page | undefined;
     try {
+      page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
       const setup: Record<string, string> =
         floor.month === 1
           ? {}
@@ -168,7 +179,7 @@ async function captureFloors(browser: Browser, origin: URL, directory: string) {
         reason: error instanceof Error ? error.message : String(error),
       });
     } finally {
-      await page.close();
+      await page?.close().catch(() => undefined);
     }
   }
 }
@@ -183,15 +194,19 @@ try {
   const browser = await chromium.launch({
     args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
   });
-  const deadline = setTimeout(() => {
-    void browser.close().catch(() => undefined);
-  }, 120000);
+  function browserDeadline(milliseconds: number) {
+    return setTimeout(() => {
+      void browser.close().catch(() => undefined);
+    }, milliseconds);
+  }
+  let deadline = browserDeadline(
+    inputs.scenario === "visual-review" ? 90000 : 120000,
+  );
   try {
     const origin = new URL(`http://127.0.0.1:${address.port}/`);
     if (inputs.scenario === "visual-review") {
       if (!checkpointDirectory)
         throw new Error("Visual review requires a checkpoint directory");
-      await captureFloors(browser, origin, checkpointDirectory);
     }
     const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
     try {
@@ -234,6 +249,11 @@ try {
       }
       const month = await page.getByTestId("month").textContent();
       const turn = Number(/(\d+) of 18\b/.exec(month ?? "")?.[1]);
+      if (inputs.scenario === "visual-review" && checkpointDirectory) {
+        clearTimeout(deadline);
+        deadline = browserDeadline(30000);
+        await captureFloors(browser, origin, checkpointDirectory);
+      }
       event({ event: "milestone", turn });
     } catch (error) {
       await page
