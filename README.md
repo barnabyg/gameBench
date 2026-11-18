@@ -20,7 +20,7 @@ A comparison manifest names a trusted local Node adapter and two builds, each wi
 
 ## Verification
 
-Run `npm.cmd run verify` from the repository root. It checks formatting, lint (including secret detection), strict types, command-level tests, dependency advisories and the npm package contents. TypeScript executes directly on Node, so there is no compilation or bundling step.
+From the repository root, run `npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run verify`. It checks formatting, lint (including secret detection), strict types, command-level tests, dependency advisories and the npm package contents. TypeScript executes directly on Node, so there is no compilation or bundling step.
 
 ## Failureship first-promotion check
 
@@ -63,3 +63,9 @@ npm.cmd ci && npm.cmd run --silent benchmark -- examples/pacing.json
 Open the report. Dispatch to delivery confirmation takes three scripted steps in the baseline and five in the candidate. The candidate crosses the example threshold of four steps. Open the candidate log at the two line numbers under the stall, then run the same command with its `replay.json` to reproduce the result.
 
 An optional manifest field, `pacing.stallAfterSteps`, enables pacing reports. Adapters can emit a `decision` event with a move ID and a strictly increasing positive step number. Set `meaningful: false` for forced decisions. Pacing compares consecutive meaningful decisions by move pair and occurrence within the same month and phase when provided and counts unmatched intervals separately. Each longest, changed, or stalled interval names the build and links to the surrounding log lines. The report records the scenario and seed. The Failureship strategy batch adds this section to each paired report with a five-step threshold. Its step count advances for every engine choice, including acknowledgements. Treat flagged intervals as playtest leads. They measure scripted steps rather than wall-clock response time.
+
+### Promotion layout gate
+
+The first-promotion command checks the candidate's visible heading, text and Continue button for clipping and overlap. At the configured resolution it measures the panel twice around the screenshot and gates defects found in both samples. The report names both builds and shows each build's findings. A baseline defect is recorded for comparison. The candidate must be clean. Intentional vertical scrolling within the notice is supported. CI runs at 1280×800 and uploads both screenshots even when the layout gate fails.
+
+Adapters that support this gate accept `inputs.settings.checkLayout` and emit a `promotion-layout` event before the milestone, with the measured resolution and findings. Missing or wrong-resolution measurements fail the gate.

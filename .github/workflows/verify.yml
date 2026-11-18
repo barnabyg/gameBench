@@ -13,6 +13,7 @@ jobs:
           node-version: 24.13.0
           cache: npm
       - run: npm ci
+      - run: npx playwright install chromium
       - run: npm run verify
   first-promotion:
     if: github.event_name == 'pull_request'
@@ -57,7 +58,7 @@ jobs:
               if ($LASTEXITCODE) { exit $LASTEXITCODE }
             } finally { Pop-Location }
           }
-      - name: Compare first-promotion screens
+      - name: Check first promotion and promotion layout
         shell: pwsh
         run: npm run failureship:smoke -- benchmark-runs/baseline/dist-benchmark $env:BASELINE benchmark-runs/candidate/dist-benchmark $env:CANDIDATE 1280 800
       - uses: actions/upload-artifact@v4

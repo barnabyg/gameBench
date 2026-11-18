@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { chromium, type Page } from "playwright";
 import sirv from "sirv";
 import { z } from "zod";
+import { inspectPromotion } from "./promotion-layout.ts";
 
 const { build, screenshot, failureScreenshot, inputs } = z
   .object({
@@ -15,6 +16,7 @@ const { build, screenshot, failureScreenshot, inputs } = z
       strategy: z.literal("seek-team-lead"),
       seed: z.int(),
       settings: z.object({
+        checkLayout: z.boolean().optional(),
         width: z.int().positive(),
         height: z.int().positive(),
       }),
@@ -84,7 +86,10 @@ try {
   }, 120000);
   try {
     const page = await browser.newPage({
-      viewport: inputs.settings,
+      viewport: {
+        width: inputs.settings.width,
+        height: inputs.settings.height,
+      },
       deviceScaleFactor: 1,
     });
     const query = new URLSearchParams({
@@ -104,7 +109,31 @@ try {
         .filter({ hasText: /7 of 18\b/ })
         .waitFor({ timeout: 15000 });
       await reachPromotion(page);
-      await page.screenshot({ path: screenshot, timeout: 15000 });
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      const first = inputs.settings.checkLayout
+        ? await inspectPromotion(page)
+        : [];
+      await page.screenshot({
+        path: screenshot,
+        timeout: 15000,
+        animations: "disabled",
+      });
+      if (inputs.settings.checkLayout) {
+        const second = await inspectPromotion(page);
+        const issues = first.filter((issue) =>
+          second.some(
+            (other) =>
+              other.type === issue.type &&
+              other.target === issue.target &&
+              other.other === issue.other,
+          ),
+        );
+        event({
+          event: "promotion-layout",
+          resolution: page.viewportSize(),
+          issues,
+        });
+      }
       const month = await page.getByTestId("month").textContent();
       const turn = Number(/(\d+) of 18\b/.exec(month ?? "")?.[1]);
       event({ event: "milestone", turn });

@@ -32,7 +32,11 @@ await writeFile(
       scenario: "first-promotion",
       strategy: "seek-team-lead",
       seed: 2,
-      settings: { width: Number(width), height: Number(height) },
+      settings: {
+        width: Number(width),
+        height: Number(height),
+        checkLayout: true,
+      },
     },
   }),
 );
