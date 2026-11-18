@@ -1,13 +1,22 @@
 import { createReadStream } from "node:fs";
-import { createServer, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
+import { DashboardJobs, message } from "./dashboard-jobs.ts";
 import { loadReport } from "./dashboard-reports.ts";
 
 const { values } = parseArgs({
   options: {
     port: { type: "string", default: "4178" },
     report: { type: "string", multiple: true, default: [] },
+    config: { type: "string" },
+    output: { type: "string", default: "benchmark-runs" },
   },
 });
 const port = Number(values.port);
@@ -28,6 +37,9 @@ const reports = await Promise.all(
     );
   }),
 );
+const jobs = new DashboardJobs(values.config, path.resolve(values.output));
+await jobs.restore();
+const runRequest = z.object({ repository: z.string().min(1) });
 const assets = {
   "/": ["index.html", "text/html; charset=utf-8"],
   "/dashboard.css": ["dashboard.css", "text/css; charset=utf-8"],
@@ -54,6 +66,20 @@ function serve(response: ServerResponse, filename: string, type: string) {
   response.on("close", () => stream.destroy());
 }
 
+async function readRunRequest(request: IncomingMessage) {
+  let body = "";
+  request.setEncoding("utf8");
+  for await (const chunk of request) {
+    body += chunk;
+    if (body.length > 16_384) return;
+  }
+  try {
+    return runRequest.parse(JSON.parse(body));
+  } catch {
+    return;
+  }
+}
+
 const server = createServer(async (request, response) => {
   response.setHeader(
     "Content-Security-Policy",
@@ -65,14 +91,39 @@ const server = createServer(async (request, response) => {
     return send(response, 403, {
       error: "Open the dashboard at its local URL.",
     });
+  try {
+    await handle(request, response);
+  } catch (error) {
+    if (response.headersSent) response.destroy();
+    else send(response, 502, { error: message(error) });
+  }
+});
+
+async function handle(request: IncomingMessage, response: ServerResponse) {
+  const route = request.url;
+  if (route === "/api/runs" && request.method === "POST") {
+    if (
+      request.headers.origin !== `http://127.0.0.1:${serverPort()}` ||
+      request.headers["content-type"] !== "application/json"
+    )
+      return send(response, 403, {
+        error: "Start the run from the local dashboard.",
+      });
+    const body = await readRunRequest(request);
+    if (!body) return send(response, 400, { error: "Select a repository." });
+    const result = await jobs.start(body.repository);
+    return send(response, result.status, result);
+  }
   if (request.method !== "GET")
     return send(response, 405, { error: "Method unavailable." });
-  const route = request.url;
+  if (route === "/api/repositories")
+    return send(response, 200, await jobs.repositories());
+  if (route === "/api/runs") return send(response, 200, jobs.jobs);
   if (route === "/api/reports")
     return send(
       response,
       200,
-      reports.map((report) => report.data),
+      [...reports, ...jobs.reports].map((report) => report.data),
     );
   if (route && Object.hasOwn(assets, route)) {
     const [filename, type] = assets[route as keyof typeof assets];
@@ -82,9 +133,12 @@ const server = createServer(async (request, response) => {
       type,
     );
   }
-  const match = /^\/evidence\/(\d+)\/(\d+)$/.exec(route ?? "");
+  const match = /^\/evidence\/([\da-f-]+)\/(\d+)$/.exec(route ?? "");
   if (match?.[1] !== undefined && match[2] !== undefined) {
-    const file = await reports[Number(match[1])]?.evidence(match[2]);
+    const report = [...reports, ...jobs.reports].find(
+      (entry) => entry.data.id === match[1],
+    );
+    const file = await report?.evidence(match[2]);
     if (file)
       return serve(
         response,
@@ -93,7 +147,7 @@ const server = createServer(async (request, response) => {
       );
   }
   send(response, 404, { error: "Page or evidence unavailable." });
-});
+}
 
 function serverPort() {
   const address = server.address();

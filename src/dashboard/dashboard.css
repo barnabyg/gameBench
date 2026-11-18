@@ -50,6 +50,10 @@ a {
 .site-header a {
   color: #e3efeb;
 }
+.site-header nav {
+  display: flex;
+  gap: 1.25rem;
+}
 .wordmark {
   text-decoration: none;
   font-size: 1.4rem;
@@ -223,6 +227,87 @@ tbody tr:hover {
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   margin-top: 0.5rem;
+}
+
+.repository-panel,
+#runs {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.repository-panel summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.repository-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+}
+.repository-tools input {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #8c9b96;
+  border-radius: 0.35rem;
+}
+.primary {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 0.35rem;
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+}
+.primary:disabled {
+  background: #eaeef0;
+  color: var(--muted);
+  cursor: default;
+}
+#repository-status,
+.repo-status,
+#run-list p {
+  color: var(--muted);
+}
+#repository-list,
+#run-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+#repository-list {
+  overflow: auto;
+  max-height: 18rem;
+}
+#repository-list li,
+#run-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  gap: 0.4rem 1rem;
+  padding: 0.55rem 0.25rem;
+}
+#repository-list label,
+.run-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+#runs h2 {
+  margin-bottom: 0.75rem;
+}
+#run-list p {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+[data-status="Running"] .status {
+  background: #e7eefe;
+  color: #273e71;
 }
 
 @media (max-width: 40rem) {

@@ -12,6 +12,18 @@ npm.cmd ci && npm.cmd run dashboard -- --report 'Failureship=C:/path/to/saved/ru
 
 Use the report path printed by the Failureship visual review. Open the local URL the dashboard prints and select the Visuals cell for Failureship. Compare the baseline and candidate captures at a checkpoint and open the visual diff when available. The Stability cell links the milestone screenshots and build logs. Areas without measurements are labelled **Not measured**.
 
+## Run Failureship from GitHub
+
+From the gameBench root in PowerShell 7 with Node.js 24.13 or later, Git, and GitHub CLI signed in to an account with access to `barnabyg/failureship`, run:
+
+```powershell
+npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run dashboard
+```
+
+Open the printed URL, expand GitHub repositories, and search for Failureship. Check the Ready repository and choose **Run selected**. The dashboard builds the latest default-branch commit and the pinned baseline with the same settings. Once the run finishes, choose **Open report** to inspect the outcome and evidence. Reopening the dashboard on the same local URL remembers checked repositories. Completed reports and their replay files are retained under `benchmark-runs/`.
+
+The dashboard runs build commands from configured game repositories on this machine. The built-in recipe trusts `barnabyg/failureship`. Repositories without a local recipe cannot run.
+
 ## Try the comparison
 
 From the repository root in PowerShell 7 with Node.js 24.13 or later, run:

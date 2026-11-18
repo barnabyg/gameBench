@@ -3,6 +3,7 @@ const matrix = document.querySelector("#matrix");
 const finding = document.querySelector("#finding");
 const resultCount = document.querySelector("#result-count");
 let activeCell;
+let shownReports;
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -102,6 +103,7 @@ function renderReports(reports) {
   const body = table.createTBody();
   for (const report of reports) {
     const row = body.insertRow();
+    row.id = `report-${report.id}`;
     const label = element("th", undefined, "game");
     label.scope = "row";
     label.append(
@@ -129,11 +131,163 @@ async function loadReports() {
   try {
     const response = await fetch("/api/reports");
     if (!response.ok) throw new Error("Reports could not be loaded.");
-    renderReports(await response.json());
+    const reports = await response.json();
+    const ids = reports.map((report) => report.id).join(",");
+    if (ids !== shownReports) {
+      shownReports = ids;
+      renderReports(reports);
+    }
   } catch {
     resultCount.textContent =
       "Reports could not be loaded. Refresh to try again.";
   }
 }
 
-await loadReports();
+const repositoryPanel = document.querySelector("#repositories");
+const repositorySearch = document.querySelector("#repository-search");
+const repositoryStatus = document.querySelector("#repository-status");
+const repositoryList = document.querySelector("#repository-list");
+const runSelected = document.querySelector("#run-selected");
+const runSection = document.querySelector("#runs");
+const runList = document.querySelector("#run-list");
+const selectionKey = "gamebench.selected";
+let repositories;
+let selected;
+let running = false;
+let shownRuns;
+
+async function api(route, options) {
+  const response = await fetch(route, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error);
+  return data;
+}
+
+function renderRepositories() {
+  const term = repositorySearch.value.trim().toLowerCase();
+  const matches = repositories.filter((repo) =>
+    repo.fullName.toLowerCase().includes(term),
+  );
+  repositoryStatus.textContent = matches.length
+    ? `${matches.length} repositories`
+    : "No matching repositories.";
+  repositoryList.replaceChildren(
+    ...matches.map((repo) => {
+      const checkbox = element("input");
+      checkbox.type = "checkbox";
+      checkbox.disabled = !repo.ready;
+      checkbox.checked = selected === repo.fullName && repo.ready;
+      checkbox.addEventListener("change", () => {
+        selected = checkbox.checked ? repo.fullName : "";
+        localStorage.setItem(selectionKey, selected);
+        renderRepositories();
+        repositoryList
+          .querySelector(`input[value="${CSS.escape(repo.fullName)}"]`)
+          ?.focus();
+      });
+      checkbox.value = repo.fullName;
+      const label = element("label");
+      label.append(checkbox, element("span", repo.fullName));
+      const status = element(
+        "span",
+        repo.ready ? "Ready" : "Needs setup",
+        "repo-status",
+      );
+      const row = element("li");
+      row.append(label, status);
+      return row;
+    }),
+  );
+  enableRun();
+}
+
+function enableRun() {
+  runSelected.disabled =
+    running ||
+    !repositories?.some((repo) => repo.ready && repo.fullName === selected);
+}
+
+repositoryPanel.addEventListener("toggle", async () => {
+  if (!repositoryPanel.open || repositories) return;
+  repositoryStatus.textContent = "Loading GitHub repositories…";
+  try {
+    repositories = await api("/api/repositories");
+    selected = localStorage.getItem(selectionKey);
+    renderRepositories();
+  } catch (error) {
+    repositoryStatus.textContent = `${error.message} Close and reopen the picker to retry.`;
+  }
+});
+repositorySearch.addEventListener(
+  "input",
+  () => repositories && renderRepositories(),
+);
+document.querySelector("#choose-repos").addEventListener("click", () => {
+  repositoryPanel.open = true;
+});
+
+function renderRuns(jobs) {
+  const snapshot = JSON.stringify(jobs);
+  if (snapshot === shownRuns) return;
+  shownRuns = snapshot;
+  runSection.hidden = !jobs.length;
+  runList.replaceChildren(
+    ...jobs.map((job) => {
+      const entry = element("li");
+      const labels = element("div");
+      labels.append(
+        element("strong", job.repository),
+        element("p", job.message),
+      );
+      const badge = element("span", job.status, "status");
+      const controls = element("div", undefined, "run-controls");
+      controls.dataset.status = job.status;
+      controls.append(badge);
+      for (const id of job.reportIds) {
+        const link = element("a", "Open report");
+        link.href = `#report-${id}`;
+        link.addEventListener("click", () =>
+          document
+            .getElementById(`report-${id}`)
+            ?.querySelector('.check:not([data-status="Not measured"])')
+            ?.click(),
+        );
+        controls.append(link);
+      }
+      entry.append(labels, controls);
+      return entry;
+    }),
+  );
+}
+
+async function checkRuns() {
+  const jobs = await api("/api/runs");
+  await loadReports();
+  renderRuns(jobs);
+  running = jobs.some((job) => job.status === "Running");
+  enableRun();
+  if (running) setTimeout(() => void checkRuns().catch(showRunError), 700);
+}
+
+function showRunError(error) {
+  repositoryStatus.textContent = error.message;
+  running = false;
+  enableRun();
+}
+
+runSelected.addEventListener("click", async () => {
+  running = true;
+  enableRun();
+  try {
+    await api("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repository: selected }),
+    });
+    await checkRuns();
+  } catch (error) {
+    showRunError(error);
+  }
+});
+
+await checkRuns().catch(showRunError);

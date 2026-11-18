@@ -27,6 +27,8 @@ test(
         "src/dashboard.ts",
         "--port",
         "0",
+        "--output",
+        directory,
         "--report",
         `Failureship=${benchmark.stdout.trim()}`,
       ],
