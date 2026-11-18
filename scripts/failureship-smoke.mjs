@@ -4,8 +4,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
-const visual = args[0] === "--visual";
-if (visual) args.shift();
+const modes = {
+  "--visual": { command: "visual", scenario: "visual-review" },
+  "--save-resume": { command: "save-resume", scenario: "save-resume" },
+  "--performance": { command: "performance", scenario: "performance-review" },
+};
+const mode = Object.hasOwn(modes, args[0]) ? modes[args[0]] : undefined;
+if (mode) args.shift();
+const { command, scenario } = mode ?? {
+  command: "smoke",
+  scenario: "first-promotion",
+};
 const [
   baseline,
   baselineVersion,
@@ -16,7 +25,7 @@ const [
 ] = args;
 if (!baseline || !baselineVersion || !candidate || !candidateVersion) {
   console.error(
-    `Usage: npm run failureship:${visual ? "visual" : "smoke"} -- <baseline dist> <baseline version> <candidate dist> <candidate version> [width] [height]`,
+    `Usage: npm run failureship:${command} -- <baseline dist> <baseline version> <candidate dist> <candidate version> [width] [height]`,
   );
   process.exit(1);
 }
@@ -31,7 +40,9 @@ await writeFile(
     adapter: fileURLToPath(new URL("../src/failureship.ts", import.meta.url)),
     baseline: { build: path.resolve(baseline), version: baselineVersion },
     candidate: { build: path.resolve(candidate), version: candidateVersion },
-    ...(visual
+    ...(command === "save-resume" ? { saveResume: true } : {}),
+    ...(command === "performance" ? { performance: { spikeAfterMs: 50 } } : {}),
+    ...(command === "visual"
       ? {
           visualReview: {
             width: Number(width),
@@ -41,13 +52,14 @@ await writeFile(
         }
       : {}),
     inputs: {
-      scenario: visual ? "visual-review" : "first-promotion",
-      strategy: "seek-team-lead",
+      scenario,
+      strategy:
+        command === "save-resume" ? "answer-and-resume" : "seek-team-lead",
       seed: 2,
       settings: {
         width: Number(width),
         height: Number(height),
-        checkLayout: !visual,
+        checkLayout: command === "smoke",
       },
     },
   }),

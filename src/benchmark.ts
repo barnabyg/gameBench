@@ -5,6 +5,13 @@ import { z } from "zod";
 import { layoutSchema } from "./promotion-layout.ts";
 import { reviewVisuals, visualReviewSchema } from "./visual-review.ts";
 import { comparePacing, decisionSchema, type Decision } from "./pacing.ts";
+import {
+  comparePerformance,
+  performanceSampleSchema,
+  performanceSettingsSchema,
+  type PerformanceSample,
+} from "./performance-review.ts";
+import { resumeEventSchema, type ResumeEvent } from "./save-resume.ts";
 
 export const buildSchema = z.object({
   version: z.string().min(1),
@@ -16,6 +23,8 @@ const manifestSchema = z.object({
   candidate: buildSchema,
   visualReview: visualReviewSchema.optional(),
   pacing: z.object({ stallAfterSteps: z.int().positive() }).optional(),
+  saveResume: z.literal(true).optional(),
+  performance: performanceSettingsSchema.optional(),
   inputs: z.object({
     scenario: z.string().min(1),
     strategy: z.string().min(1),
@@ -41,6 +50,11 @@ export async function compare(
     Record<"baseline" | "candidate", z.infer<typeof layoutSchema>>
   > = {};
   const decisions = { baseline: [] as Decision[], candidate: [] as Decision[] };
+  const timings: Partial<Record<"baseline" | "candidate", PerformanceSample>> =
+    {};
+  const resume: Partial<
+    Record<"baseline" | "candidate", ResumeEvent & { line: number }>
+  > = {};
   async function run(role: "baseline" | "candidate") {
     const build = manifest[role];
     const screenshot = `${role}-milestone.png`;
@@ -94,6 +108,16 @@ export async function compare(
             previousStep = decision.step;
             decisions[role].push({ ...decision, line: index + 1 });
           }
+          if (manifest.saveResume && lastEvent.event === "save-resume")
+            resume[role] = {
+              ...resumeEventSchema.parse(lastEvent),
+              line: index + 1,
+            };
+          if (manifest.performance && lastEvent.event === "performance-sample")
+            timings[role] = {
+              ...performanceSampleSchema.parse(lastEvent),
+              line: index + 1,
+            };
         } catch {
           throw new Error(
             `Invalid event in ${path.join(directory, log)} at line ${index + 1}`,
@@ -104,7 +128,12 @@ export async function compare(
         z.object({ event: z.literal("milestone-missed") }).safeParse(lastEvent)
           .success
       )
-        return { ...evidence, status: "missed" as const, turns: null };
+        return {
+          ...evidence,
+          status: "missed" as const,
+          turns: null,
+          ...(await linkScreenshot(failureScreenshot)),
+        };
       const milestone = z
         .object({ event: z.literal("milestone"), turn: z.int().nonnegative() })
         .safeParse(lastEvent);
@@ -143,6 +172,41 @@ export async function compare(
     ({ status }) => status === "reached",
   ).length;
   const complete = baseline.turns !== null && candidate.turns !== null;
+  const performance = manifest.performance
+    ? comparePerformance(
+        { ...baseline, sample: timings.baseline },
+        { ...candidate, sample: timings.candidate },
+        manifest.performance.spikeAfterMs,
+      )
+    : undefined;
+  function resumeResult(
+    role: "baseline" | "candidate",
+    outcome: typeof baseline,
+  ) {
+    const observation = resume[role];
+    return {
+      version: outcome.version,
+      log: outcome.log,
+      screenshot: outcome.screenshot,
+      status: observation?.status ?? "unavailable",
+      step: observation?.step,
+      before: observation?.before,
+      after: observation?.after,
+      reason:
+        observation?.reason ?? ("error" in outcome ? outcome.error : undefined),
+      line: observation?.line,
+    };
+  }
+  const saveResume = manifest.saveResume
+    ? {
+        baseline: resumeResult("baseline", baseline),
+        candidate: resumeResult("candidate", candidate),
+      }
+    : undefined;
+  const resumed =
+    !saveResume ||
+    (saveResume.baseline.status === "passed" &&
+      saveResume.candidate.status === "passed");
   const layout =
     manifest.inputs.settings.checkLayout === true
       ? {
@@ -176,6 +240,8 @@ export async function compare(
   if (layout?.status === "failed")
     console.error(`Promotion layout check failed. Evidence: ${directory}`);
   await save("report.json", {
+    ...(performance ? { performance } : {}),
+    ...(saveResume ? { saveResume } : {}),
     ...(layout ? { layout } : {}),
     ...(manifest.visualReview
       ? {
@@ -214,7 +280,11 @@ export async function compare(
     baseline,
     candidate,
     complete,
-    passed: complete && layout?.status !== "failed",
+    passed:
+      complete &&
+      resumed &&
+      layout?.status !== "failed" &&
+      performance?.status !== "incomplete",
     decisions,
   };
 }

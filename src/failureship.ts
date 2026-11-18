@@ -6,7 +6,12 @@ import { once } from "node:events";
 import { type Browser, chromium, type Page } from "playwright";
 import sirv from "sirv";
 import { z } from "zod";
+import {
+  markBrowserStartup,
+  sampleBrowserPerformance,
+} from "./performance-review.ts";
 import { inspectPromotion } from "./promotion-layout.ts";
+import { verifySaveResume } from "./save-resume.ts";
 import { checkpoints, checkpointFile } from "./visual-checkpoints.ts";
 
 const {
@@ -26,8 +31,13 @@ const {
       .object({ width: z.int().positive(), height: z.int().positive() })
       .optional(),
     inputs: z.object({
-      scenario: z.enum(["first-promotion", "visual-review"]),
-      strategy: z.literal("seek-team-lead"),
+      scenario: z.enum([
+        "first-promotion",
+        "visual-review",
+        "save-resume",
+        "performance-review",
+      ]),
+      strategy: z.enum(["seek-team-lead", "answer-and-resume"]),
       seed: z.int(),
       settings: z.object({
         checkLayout: z.boolean().optional(),
@@ -40,6 +50,27 @@ const {
 
 function event(value: unknown) {
   console.log(JSON.stringify(value));
+}
+
+async function runSaveResume(page: Page, origin: URL) {
+  await openGame(page, origin, { month: "7" });
+  await page
+    .getByTestId("month")
+    .filter({ hasText: /7 of 18\b/ })
+    .waitFor({ timeout: 15_000 });
+  const observation = await verifySaveResume(page);
+  event(observation);
+  const passed = observation.status === "passed";
+  await page
+    .screenshot({
+      path: passed ? screenshot : failureScreenshot,
+      timeout: 10_000,
+      animations: "disabled",
+    })
+    .catch(() => undefined);
+  event(
+    passed ? { event: "milestone", turn: 7 } : { event: "milestone-missed" },
+  );
 }
 
 async function reachPromotion(page: Page) {
@@ -210,51 +241,62 @@ try {
     }
     const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
     try {
-      await openGame(page, origin, {
-        month: "7",
-        choose: "take-the-blame,screenshot-on-the-note,word-with-the-analyst",
-      });
-      event({ event: "launch", seed: inputs.seed });
-      await page
-        .getByTestId("month")
-        .filter({ hasText: /7 of 18\b/ })
-        .waitFor({ timeout: 15000 });
-      await reachPromotion(page);
-      await page.evaluate(() => document.fonts.ready.then(() => undefined));
-      const first = inputs.settings.checkLayout
-        ? await inspectPromotion(page)
-        : [];
-      await capturePage(page, screenshot);
-      if (inputs.scenario === "visual-review" && checkpointDirectory) {
-        await copyFile(
-          screenshot,
-          path.join(checkpointDirectory, checkpointFile(checkpoints.promotion)),
-        );
-      }
-      if (inputs.settings.checkLayout) {
-        const second = await inspectPromotion(page);
-        const issues = first.filter((issue) =>
-          second.some(
-            (other) =>
-              other.type === issue.type &&
-              other.target === issue.target &&
-              other.other === issue.other,
-          ),
-        );
-        event({
-          event: "promotion-layout",
-          resolution: page.viewportSize(),
-          issues,
+      if (inputs.scenario === "save-resume") {
+        await runSaveResume(page, origin);
+      } else {
+        if (inputs.scenario === "performance-review")
+          await markBrowserStartup(page);
+        await openGame(page, origin, {
+          month: "7",
+          choose: "take-the-blame,screenshot-on-the-note,word-with-the-analyst",
         });
+        event({ event: "launch", seed: inputs.seed });
+        await page
+          .getByTestId("month")
+          .filter({ hasText: /7 of 18\b/ })
+          .waitFor({ timeout: 15000 });
+        await reachPromotion(page);
+        await page.evaluate(() => document.fonts.ready.then(() => undefined));
+        if (inputs.scenario === "performance-review")
+          event(await sampleBrowserPerformance(page));
+        const first = inputs.settings.checkLayout
+          ? await inspectPromotion(page)
+          : [];
+        await capturePage(page, screenshot);
+        if (inputs.scenario === "visual-review" && checkpointDirectory) {
+          await copyFile(
+            screenshot,
+            path.join(
+              checkpointDirectory,
+              checkpointFile(checkpoints.promotion),
+            ),
+          );
+        }
+        if (inputs.settings.checkLayout) {
+          const second = await inspectPromotion(page);
+          const issues = first.filter((issue) =>
+            second.some(
+              (other) =>
+                other.type === issue.type &&
+                other.target === issue.target &&
+                other.other === issue.other,
+            ),
+          );
+          event({
+            event: "promotion-layout",
+            resolution: page.viewportSize(),
+            issues,
+          });
+        }
+        const month = await page.getByTestId("month").textContent();
+        const turn = Number(/(\d+) of 18\b/.exec(month ?? "")?.[1]);
+        if (inputs.scenario === "visual-review" && checkpointDirectory) {
+          clearTimeout(deadline);
+          deadline = browserDeadline(30000);
+          await captureFloors(browser, origin, checkpointDirectory);
+        }
+        event({ event: "milestone", turn });
       }
-      const month = await page.getByTestId("month").textContent();
-      const turn = Number(/(\d+) of 18\b/.exec(month ?? "")?.[1]);
-      if (inputs.scenario === "visual-review" && checkpointDirectory) {
-        clearTimeout(deadline);
-        deadline = browserDeadline(30000);
-        await captureFloors(browser, origin, checkpointDirectory);
-      }
-      event({ event: "milestone", turn });
     } catch (error) {
       await page
         .screenshot({ path: failureScreenshot, timeout: 10000 })

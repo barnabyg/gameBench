@@ -43,6 +43,18 @@ const issues = z.array(
     other: z.string().optional(),
   }),
 );
+const resumeOutcome = z.object({
+  status: z.enum(["passed", "failed", "unavailable"]),
+  step: z.string().optional(),
+  reason: z.string().optional(),
+  line: z.number().optional(),
+});
+const loadTime = z.object({ durationMs: z.number().nullable() });
+const frameTiming = z.object({
+  count: z.number(),
+  maxMs: z.number().nullable(),
+  spikes: z.array(z.object({ frame: z.number(), durationMs: z.number() })),
+});
 const reportSchema = z.object({
   inputs: z.object({
     scenario: nonempty,
@@ -52,6 +64,25 @@ const reportSchema = z.object({
   }),
   baseline: role,
   candidate: role,
+  performance: z
+    .object({
+      status: z.enum(["complete", "incomplete"]),
+      load: z.object({
+        baseline: loadTime,
+        candidate: loadTime,
+        deltaMs: z.number().nullable(),
+      }),
+      frames: z.object({
+        baseline: frameTiming,
+        candidate: frameTiming,
+        deltaMaxMs: z.number().nullable(),
+        spikeAfterMs: z.number(),
+      }),
+    })
+    .optional(),
+  saveResume: z
+    .object({ baseline: resumeOutcome, candidate: resumeOutcome })
+    .optional(),
   layout: z
     .object({
       status: z.enum(["passed", "failed"]),
@@ -251,7 +282,34 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
       },
     ],
   };
-  if (report.candidate.error)
+  if (report.saveResume) {
+    const { baseline, candidate } = report.saveResume;
+    checks.Stability = {
+      status:
+        candidate.status !== "passed"
+          ? "Failed"
+          : baseline.status === "passed"
+            ? "Passed"
+            : "Review",
+      regression: baseline.status === "passed" && candidate.status !== "passed",
+      findings: (["candidate", "baseline"] as const).map((key) => {
+        const result = report.saveResume?.[key];
+        const summary =
+          result?.status === "passed"
+            ? "restored the saved state and continued play"
+            : result?.status === "failed"
+              ? `failed at ${result.step ?? "save and resume"}`
+              : "did not record a save-and-resume result";
+        return {
+          summary: `${names[key]} ${summary}.${result?.reason ? ` ${result.reason}` : ""}${result?.line ? ` See log line ${result.line}.` : ""}`,
+          evidence: [
+            ...link(`${names[key]} log`, report[key].log),
+            ...link(`${names[key]} screenshot`, report[key].screenshot),
+          ],
+        };
+      }),
+    };
+  } else if (report.candidate.error)
     checks.Stability.findings.push({
       summary: report.candidate.error,
       evidence: logs,
@@ -267,6 +325,38 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
       evidence: logs,
     });
     if (checks.Stability.status === "Passed")
+      checks.Stability.status = "Review";
+  }
+  if (report.performance) {
+    const { load, frames, status } = report.performance;
+    const format = new Intl.NumberFormat("en", { maximumFractionDigits: 1 });
+    const ms = (value: number | null) =>
+      value === null ? "unavailable" : `${format.format(value)} ms`;
+    const delta = (value: number | null) =>
+      value === null
+        ? "change unavailable"
+        : `${value > 0 ? "+" : ""}${ms(value)}`;
+    checks.Stability.findings.unshift(
+      {
+        summary: `Startup to month header: ${ms(load.baseline.durationMs)} baseline, ${ms(load.candidate.durationMs)} candidate (${delta(load.deltaMs)}).`,
+        evidence: logs,
+      },
+      {
+        summary: `First-promotion notice: slowest frame ${ms(frames.baseline.maxMs)} baseline, ${ms(frames.candidate.maxMs)} candidate (${delta(frames.deltaMaxMs)}). Spikes at or above ${ms(frames.spikeAfterMs)}: ${frames.baseline.spikes.length}/${frames.baseline.count} baseline, ${frames.candidate.spikes.length}/${frames.candidate.count} candidate.`,
+        evidence: logs,
+      },
+      ...roles.flatMap((key) =>
+        frames[key].spikes.map(({ frame, durationMs }) => ({
+          summary: `${names[key]} frame ${frame} at first promotion: ${ms(durationMs)}.`,
+          evidence: link(`${names[key]} log`, report[key].log),
+        })),
+      ),
+    );
+    if (status === "incomplete") checks.Stability.status = "Failed";
+    else if (
+      checks.Stability.status === "Passed" &&
+      ((load.deltaMs ?? 0) > 0 || frames.candidate.spikes.length)
+    )
       checks.Stability.status = "Review";
   }
   if (report.pacing?.longest.candidate) {
