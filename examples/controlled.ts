@@ -17,6 +17,7 @@ const { distance } = z
   .parse(JSON.parse(readFileSync(build, "utf8")));
 const destination = distance + Math.abs(inputs.seed % 2);
 let turn = 0;
+console.log(JSON.stringify({ event: "decision", step: 1, move: "dispatch" }));
 for (
   let travelled = 0;
   travelled < destination;
@@ -32,4 +33,11 @@ for (
     }),
   );
 }
+console.log(
+  JSON.stringify({
+    event: "decision",
+    step: Math.max(2, turn),
+    move: "confirm-delivery",
+  }),
+);
 console.log(JSON.stringify({ event: "milestone", turn }));

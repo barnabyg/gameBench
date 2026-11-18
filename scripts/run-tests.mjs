@@ -2,7 +2,10 @@ import { run } from "node:test";
 import { spec } from "node:test/reporters";
 import { pipeline } from "node:stream/promises";
 const controller = new AbortController();
-const tests = run({ signal: controller.signal });
+const tests = run({
+  signal: controller.signal,
+  globPatterns: ["tests/**/*.test.js"],
+});
 tests.on("test:fail", () => {
   process.exitCode = 1;
   if (process.env.CI) controller.abort();
