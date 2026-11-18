@@ -14,10 +14,12 @@ type SavedRun = z.infer<typeof recordSchema>;
 type Job = {
   id: string;
   repository: string;
+  branch: string;
   status: "Running" | "Passed" | "Failed";
   message: string;
   reportIds: string[];
 };
+type Selection = { repository: string; branch?: string };
 
 export class DashboardJobs {
   private runner: DashboardRunner;
@@ -56,7 +58,11 @@ export class DashboardJobs {
     return this.runner.repositories();
   }
 
-  async start(repositories: string[]) {
+  branches(repository: string) {
+    return this.runner.branches(repository);
+  }
+
+  async start(repositories: Selection[]) {
     if (this.active)
       return {
         status: 409,
@@ -70,54 +76,51 @@ export class DashboardJobs {
           .filter((item) => item.ready)
           .map((item) => [item.fullName, item]),
       );
-      const selections = [...new Set(repositories)].flatMap((name) => {
-        const repo = ready.get(name);
-        return repo ? [repo] : [];
+      const names = new Set();
+      const jobs = repositories.flatMap(({ repository, branch }) => {
+        const repo = ready.get(repository);
+        if (!repo || names.has(repository)) return [];
+        names.add(repository);
+        const job: Job = {
+          id: randomUUID(),
+          repository,
+          branch: branch ?? repo.defaultBranch,
+          status: "Running",
+          message: "Preparing benchmark.",
+          reportIds: [],
+        };
+        return [job];
       });
-      if (selections.length !== repositories.length) {
+      if (jobs.length !== repositories.length) {
         this.active = false;
         return {
           status: 400,
           error: "Select distinct repositories marked Ready.",
         };
       }
-      const jobs = selections.map(
-        ({ fullName: repository, defaultBranch }) => ({
-          branch: defaultBranch,
-          job: {
-            id: randomUUID(),
-            repository,
-            status: "Running",
-            message: "Preparing benchmark.",
-            reportIds: [],
-          } satisfies Job,
-        }),
-      );
-      this.jobs.unshift(...jobs.map(({ job }) => job));
-      void Promise.all(
-        jobs.map(({ job, branch }) => this.run(job, branch)),
-      ).finally(() => {
+      this.jobs.unshift(...jobs);
+      void Promise.all(jobs.map((job) => this.run(job))).finally(() => {
         this.active = false;
       });
-      return { status: 202, jobs: jobs.map(({ job }) => job) };
+      return { status: 202, jobs };
     } catch (error) {
       this.active = false;
       throw error;
     }
   }
 
-  private async run(job: Job, branch: string) {
+  private async run(job: Job) {
     try {
       const result = await this.runner.run(
         job.repository,
-        branch,
+        job.branch,
         (progress) => {
           job.message = progress;
         },
       );
       const record = {
         repository: job.repository,
-        branch,
+        branch: job.branch,
         reports: result.reports,
       };
       job.reportIds = await this.addReports(record);

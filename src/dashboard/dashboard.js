@@ -219,6 +219,8 @@ const runList = document.querySelector("#run-list");
 const selectionKey = "gamebench.selected";
 let repositories;
 const selected = new Set();
+const selectedBranches = new Map();
+const branchLookups = new Map();
 let running = false;
 let shownRuns;
 
@@ -227,6 +229,51 @@ async function api(route, options) {
   const data = await response.json();
   if (!response.ok) throw new Error(data.error);
   return data;
+}
+
+function branchPicker(repo) {
+  const controls = element("div", undefined, "branch-picker");
+  const label = element("label", "Candidate branch");
+  const picker = element("select");
+  picker.setAttribute("aria-label", `Candidate branch for ${repo.fullName}`);
+  const defaultOption = element("option", `${repo.defaultBranch} (default)`);
+  defaultOption.value = "";
+  picker.append(defaultOption);
+  label.append(picker);
+  controls.append(label);
+  picker.addEventListener("change", () => {
+    if (picker.value) selectedBranches.set(repo.fullName, picker.value);
+    else selectedBranches.delete(repo.fullName);
+  });
+  if (!branchLookups.has(repo.fullName))
+    branchLookups.set(
+      repo.fullName,
+      api(`/api/branches?repository=${encodeURIComponent(repo.fullName)}`),
+    );
+  picker.disabled = true;
+  void branchLookups
+    .get(repo.fullName)
+    .then((branches) => {
+      for (const branch of branches) {
+        if (branch === repo.defaultBranch) continue;
+        const option = element("option", branch);
+        option.value = branch;
+        picker.append(option);
+      }
+      picker.value = selectedBranches.get(repo.fullName) ?? "";
+      if (picker.selectedIndex < 0) picker.value = "";
+      picker.disabled = picker.options.length < 2;
+    })
+    .catch(() => {
+      branchLookups.delete(repo.fullName);
+      controls.append(
+        element(
+          "small",
+          "Branches unavailable. The default branch can still run.",
+        ),
+      );
+    });
+  return controls;
 }
 
 function renderRepositories() {
@@ -243,13 +290,6 @@ function renderRepositories() {
       checkbox.type = "checkbox";
       checkbox.disabled = !repo.ready;
       checkbox.checked = selected.has(repo.fullName) && repo.ready;
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) selected.add(repo.fullName);
-        else selected.delete(repo.fullName);
-        localStorage.setItem(selectionKey, JSON.stringify([...selected]));
-        enableRun();
-      });
-      checkbox.value = repo.fullName;
       const label = element("label");
       label.append(checkbox, element("span", repo.fullName));
       const status = element(
@@ -258,7 +298,22 @@ function renderRepositories() {
         "repo-status",
       );
       const row = element("li");
-      row.append(label, status);
+      const controls = element("div", undefined, "repo-controls");
+      controls.append(status);
+      if (checkbox.checked) controls.append(branchPicker(repo));
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) {
+          selected.add(repo.fullName);
+          controls.append(branchPicker(repo));
+        } else {
+          selected.delete(repo.fullName);
+          selectedBranches.delete(repo.fullName);
+          controls.querySelector(".branch-picker")?.remove();
+        }
+        localStorage.setItem(selectionKey, JSON.stringify([...selected]));
+        enableRun();
+      });
+      row.append(label, controls);
       return row;
     }),
   );
@@ -317,7 +372,7 @@ function renderRuns(jobs) {
       const labels = element("div");
       labels.append(
         element("strong", job.repository),
-        element("p", job.message),
+        element("p", `${job.branch} · ${job.message}`),
       );
       const badge = element("span", job.status, "status");
       const controls = element("div", undefined, "run-controls");
@@ -358,7 +413,10 @@ runSelected.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        repositories: readySelection().map((repo) => repo.fullName),
+        repositories: readySelection().map((repo) => ({
+          repository: repo.fullName,
+          branch: selectedBranches.get(repo.fullName),
+        })),
       }),
     });
     await checkRuns();

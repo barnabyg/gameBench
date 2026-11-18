@@ -322,6 +322,20 @@ tbody tr:hover {
   align-items: center;
   gap: 0.5rem;
 }
+.repo-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.branch-picker select {
+  max-width: 20ch;
+  padding: 0.25rem;
+  font: inherit;
+}
+.branch-picker small {
+  color: var(--muted);
+}
 #runs h2 {
   margin-bottom: 0.75rem;
 }

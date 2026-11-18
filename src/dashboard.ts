@@ -40,7 +40,14 @@ const reports = await Promise.all(
 const jobs = new DashboardJobs(values.config, path.resolve(values.output));
 await jobs.restore();
 const runRequest = z.object({
-  repositories: z.array(z.string().min(1)).min(1),
+  repositories: z
+    .array(
+      z.object({
+        repository: z.string().min(1),
+        branch: z.string().min(1).optional(),
+      }),
+    )
+    .min(1),
 });
 const assets = {
   "/": ["index.html", "text/html; charset=utf-8"],
@@ -121,6 +128,13 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
     return send(response, 405, { error: "Method unavailable." });
   if (route === "/api/repositories")
     return send(response, 200, await jobs.repositories());
+  if (route?.startsWith("/api/branches?")) {
+    const repo = new URLSearchParams(route.slice("/api/branches?".length)).get(
+      "repository",
+    );
+    if (!repo) return send(response, 400, { error: "Select a repository." });
+    return send(response, 200, await jobs.branches(repo));
+  }
   if (route === "/api/runs") return send(response, 200, jobs.jobs);
   if (route === "/api/reports")
     return send(

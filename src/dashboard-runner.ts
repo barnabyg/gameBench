@@ -291,12 +291,23 @@ export class DashboardRunner {
     return games;
   }
 
-  private async api(endpoint: string, args: string[] = []) {
+  private async recipeFor(fullName: string) {
+    const repository = repositoryName.parse(fullName);
+    const recipe = (await this.games()).get(repository.toLowerCase());
+    if (!recipe) throw new Error(`${repository} needs benchmark setup.`);
+    return recipe;
+  }
+
+  private async api(
+    endpoint: string,
+    args: string[] = [],
+    errorLabel = "GitHub CLI request failed",
+  ) {
     const result = await command("gh", ["api", endpoint, ...args], {
       timeout: githubTimeout,
       env: nonInteractive,
     });
-    assertSuccess(result, "GitHub CLI request failed");
+    assertSuccess(result, errorLabel);
     return result.stdout;
   }
 
@@ -314,21 +325,34 @@ export class DashboardRunner {
     }));
   }
 
+  async branches(fullName: string) {
+    const { repository } = await this.recipeFor(fullName);
+    const response = await this.api(
+      `repos/${repository}/branches?per_page=100`,
+      ["--paginate", "--slurp"],
+      `Could not list branches for ${repository}`,
+    );
+    const pages = z
+      .array(z.array(z.object({ name: z.string().min(1) })))
+      .parse(JSON.parse(response));
+    return pages.flatMap((page) => page.map(({ name }) => name));
+  }
+
   async run(
     fullName: string,
-    defaultBranch: string,
+    branch: string,
     onProgress: (message: string) => void,
   ) {
-    const repository = repositoryName.parse(fullName);
-    const recipe = (await this.games()).get(repository.toLowerCase());
-    if (!recipe) throw new Error(`${repository} needs benchmark setup.`);
+    const recipe = await this.recipeFor(fullName);
+    const { repository } = recipe;
 
-    onProgress("Resolving default branch");
+    onProgress(`Resolving branch ${branch}`);
     const candidate = commitId.parse(
       JSON.parse(
         await this.api(
-          `repos/${repository}/commits/${encodeURIComponent(defaultBranch)}`,
-          ["--jq", ".sha | @json"],
+          `repos/${repository}/git/ref/heads/${encodeURIComponent(branch)}`,
+          ["--jq", ".object.sha | @json"],
+          `Could not resolve branch ${JSON.stringify(branch)} for ${repository}`,
         ),
       ),
     );
@@ -367,9 +391,14 @@ export class DashboardRunner {
         version,
       ]);
       await git("checkout", ["checkout", "--quiet", "--detach", version]);
+      const packageFile = await stat(path.join(checkout, "package.json")).catch(
+        () => undefined,
+      );
+      if (!packageFile?.isFile())
+        throw new Error(`${role} checkout has no package.json to build.`);
 
       const npm = async (step: string, args: string[]) => {
-        const [executable, argv] = npmCommand(args);
+        const [executable, argv] = npmCommand(["--prefix", checkout, ...args]);
         const evidence = path.join(directory, `${role}-${step}.log`);
         const result = await logged(
           executable,
