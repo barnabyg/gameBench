@@ -1,0 +1,28 @@
+{
+  "name": "gamebench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.13.0"
+  },
+  "scripts": {
+    "benchmark": "node src/benchmark.ts",
+    "test": "node scripts/run-tests.mjs",
+    "verify": "prettier --check . && biome lint --error-on-warnings . && tsc --noEmit && npm test && npm audit --audit-level=low && npm pack --dry-run"
+  },
+  "files": [
+    "src",
+    "examples",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8",
+    "@types/node": "24.19.2",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

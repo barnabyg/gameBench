@@ -1,0 +1,5 @@
+node_modules
+package-lock.json
+benchmark-runs
+# User-supplied, untracked input. Revisit if the brief becomes a maintained project document.
+game-build-benchmark-brief.md
