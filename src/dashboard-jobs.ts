@@ -18,6 +18,7 @@ type Job = {
   status: "Running" | "Passed" | "Failed";
   message: string;
   reportIds: string[];
+  setupComplete?: true;
 };
 type Selection = { repository: string; branch?: string };
 
@@ -34,6 +35,7 @@ export class DashboardJobs {
   }
 
   async restore() {
+    await this.runner.restoreSetups();
     await mkdir(this.manifests, { recursive: true });
     const files = await readdir(this.manifests);
     for (const filename of files
@@ -71,14 +73,10 @@ export class DashboardJobs {
     this.active = true;
     try {
       const catalog = await this.repositories();
-      const ready = new Map(
-        catalog
-          .filter((item) => item.ready)
-          .map((item) => [item.fullName, item]),
-      );
+      const available = new Map(catalog.map((item) => [item.fullName, item]));
       const names = new Set();
       const jobs = repositories.flatMap(({ repository, branch }) => {
-        const repo = ready.get(repository);
+        const repo = available.get(repository);
         if (!repo || names.has(repository)) return [];
         names.add(repository);
         const job: Job = {
@@ -95,7 +93,8 @@ export class DashboardJobs {
         this.active = false;
         return {
           status: 400,
-          error: "Select distinct repositories marked Ready.",
+          error:
+            "Select distinct repositories from the GitHub repository list.",
         };
       }
       this.jobs.unshift(...jobs);
@@ -116,6 +115,9 @@ export class DashboardJobs {
         job.branch,
         (progress) => {
           job.message = progress;
+        },
+        () => {
+          job.setupComplete = true;
         },
       );
       const record = {

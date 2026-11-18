@@ -19,6 +19,7 @@ const dashboard = fileURLToPath(
   new URL("../src/dashboard.ts", import.meta.url),
 );
 const repository = "benchmark-fixtures/harvest";
+const missingRecipe = "benchmark-fixtures/missing-recipe";
 const branch = "dev/tuning";
 
 async function createGame(directory) {
@@ -78,28 +79,17 @@ async function createGame(directory) {
     console.log(JSON.stringify({ event: "milestone", turn }));
   `,
   );
-  await writeFile(
-    config,
-    JSON.stringify({
-      games: [
-        {
-          repository,
-          baseline,
-          build: { output: "." },
-          comparison: {
-            adapter,
-            inputs: {
-              scenario: "harvest",
-              strategy: "store",
-              seed: 7,
-              settings: {},
-            },
-          },
-        },
-      ],
-    }),
-  );
-  return { baseline, candidate, checkout, config, commit, git };
+  const recipe = {
+    repository,
+    baseline,
+    build: { output: "." },
+    comparison: {
+      adapter,
+      inputs: { scenario: "harvest", strategy: "store", seed: 7, settings: {} },
+    },
+  };
+  await writeFile(config, JSON.stringify({ games: [recipe] }));
+  return { baseline, candidate, checkout, config, commit, git, recipe };
 }
 
 async function githubFixture(directory) {
@@ -118,10 +108,16 @@ async function githubFixture(directory) {
     const endpoint = process.argv[2];
     let result;
     if (endpoint === "user/repos") {
-      result = [[{ name:"harvest", full_name:${JSON.stringify(repository)}, default_branch:"main" }]];
+      result = [[
+        { name:"harvest", full_name:${JSON.stringify(repository)}, default_branch:"main" },
+        { name:"missing-recipe", full_name:${JSON.stringify(missingRecipe)}, default_branch:"main" },
+      ]];
     } else if (endpoint.endsWith("branches?per_page=100")) {
       const refs = execFileSync("git", ["-C", "upstream", "for-each-ref", "--format=%(refname:short)", "refs/heads"], { encoding:"utf8" }).trim();
       result = refs.split(/\\r?\\n/).map((name) => [{ name }]);
+    } else if (endpoint.includes("/commits/")) {
+      const revision = endpoint.split("/commits/")[1];
+      result = { sha: execFileSync("git", ["-C", "upstream", "rev-parse", "--verify", revision + "^{commit}"], { encoding:"utf8" }).trim() };
     } else if (endpoint.includes("/git/ref/heads/")) {
       const ref = decodeURIComponent(endpoint.split("/git/ref/heads/")[1]);
       result = execFileSync("git", ["-C", "upstream", "rev-parse", "refs/heads/" + ref], { encoding:"utf8" }).trim();
@@ -133,13 +129,12 @@ async function githubFixture(directory) {
   );
 }
 
-async function launch(directory, game) {
+async function launch(directory, game, configured = true) {
   const child = spawn(
     process.execPath,
     [
       dashboard,
-      "--config",
-      game.config,
+      ...(configured ? ["--config", game.config] : []),
       "--output",
       path.join(directory, "runs"),
       "--port",
@@ -172,6 +167,94 @@ async function launch(directory, game) {
     throw error;
   }
 }
+
+test(
+  "sets up a selected repository during its run and reuses the setup after restart",
+  { timeout: 120_000 },
+  async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "gamebench-setup-"));
+    let server;
+    let browser;
+    try {
+      const game = await createGame(directory);
+      await githubFixture(directory);
+      const recipeDirectory = path.join(directory, "runs", "setup-recipes");
+      const recipeFile = path.join(
+        recipeDirectory,
+        "repo-benchmark-fixtures.harvest.json",
+      );
+      await mkdir(recipeDirectory, { recursive: true });
+      await writeFile(
+        recipeFile,
+        JSON.stringify({
+          ...game.recipe,
+          comparison: { ...game.recipe.comparison, adapter: "missing.mjs" },
+        }),
+      );
+      server = await launch(directory, game, false);
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      const picker = page.getByRole("list", { name: "GitHub repositories" });
+      const repo = picker.getByRole("listitem").filter({ hasText: repository });
+      const checkbox = repo.getByRole("checkbox");
+      const run = page.getByRole("button", { name: "Run selected" });
+      await page.goto(server.url);
+      await page.getByRole("link", { name: "Repositories" }).click();
+      await repo.getByText("Needs setup").waitFor();
+      assert.ok(await checkbox.isEnabled());
+      await checkbox.check();
+      await picker.getByRole("checkbox", { name: missingRecipe }).check();
+      await run.click();
+      await page
+        .getByText(/Adapter file is unavailable.*missing\.mjs/)
+        .waitFor();
+      await page
+        .getByText(/Add a trusted recipe.*missing-recipe\.json/)
+        .waitFor();
+      await repo.getByText("Needs setup").waitFor();
+
+      await writeFile(
+        recipeFile,
+        JSON.stringify({
+          ...game.recipe,
+          comparison: {
+            ...game.recipe.comparison,
+            adapter: path.relative(
+              recipeDirectory,
+              game.recipe.comparison.adapter,
+            ),
+          },
+        }),
+      );
+      await run.click();
+      await repo.getByText("Ready", { exact: true }).waitFor();
+      await page
+        .getByRole("link", { name: "Open report" })
+        .click({ timeout: 45_000 });
+      await page
+        .locator("#finding")
+        .getByText(game.baseline, { exact: true })
+        .first()
+        .waitFor();
+
+      await rm(recipeFile);
+      await server.stop();
+      server = await launch(directory, game, false);
+      await page.goto(server.url);
+      await page.getByRole("link", { name: "Repositories" }).click();
+      await repo.getByText("Ready", { exact: true }).waitFor();
+      await checkbox.check();
+      await run.click();
+      await page
+        .getByRole("link", { name: "Open report" })
+        .waitFor({ timeout: 45_000 });
+    } finally {
+      await browser?.close();
+      await server?.stop();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test(
   "runs the selected branch and keeps its exact commit when the branch advances",
