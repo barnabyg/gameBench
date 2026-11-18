@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { command } from "../src/dashboard-command.ts";
 
 test(
   "reports whether each build resumes the same save and can continue",
-  { timeout: 90_000 },
+  { timeout: 900_000 },
   async (context) => {
     const root = await mkdtemp(path.join(tmpdir(), "gamebench-save-"));
     context.after(() => rm(root, { recursive: true, force: true }));
-    async function build(name, restoresSave) {
+    async function build(name, restoresSave, canContinue = true) {
       const directory = path.join(root, name);
       await mkdir(directory);
       await writeFile(
@@ -27,7 +27,10 @@ test(
           inbox.textContent = "1 to answer";
           panel.innerHTML = '<section data-testid="panel-result"><p data-testid="answer-result">Report filed</p><button data-testid="continue">Continue</button></section>';
           panel.querySelector("button").onclick = () => {
-            panel.innerHTML = '<button data-testid="inbox-item">Next message</button>';
+            panel.innerHTML = '<button data-testid="inbox-item" data-to-answer="true">Next message</button>';
+            panel.querySelector("button").onclick = () => {
+              panel.innerHTML = '<section data-testid="panel-notification"><button data-testid="option-next" ${canContinue ? "" : "disabled"}>Reply</button></section>';
+            };
           };
         }
         inbox.onclick = () => {
@@ -41,7 +44,7 @@ test(
           };
         };
         if (localStorage.getItem("run")) {
-          if (${restoresSave}) showResult();
+          if (${restoresSave} && !location.search) showResult();
           else panel.innerHTML = '<p data-testid="save-lost">Save lost</p>';
         }
       </script>`,
@@ -50,36 +53,42 @@ test(
     }
     const baseline = await build("restores", true);
     const candidate = await build("loses-save", false);
-    const manifest = path.join(root, "comparison.json");
-    await writeFile(
-      manifest,
-      JSON.stringify({
-        adapter: path.resolve("src/failureship.ts"),
-        baseline,
-        candidate,
-        saveResume: true,
-        inputs: {
-          scenario: "save-resume",
-          strategy: "answer-and-resume",
-          seed: 2,
-          settings: { width: 1280, height: 800 },
-        },
-      }),
-    );
-    function run(source) {
-      const result = spawnSync(
+    const blocked = await build("no-next-choice", true, false);
+    async function comparison(build) {
+      const manifest = path.join(root, `${build.version}.json`);
+      await writeFile(
+        manifest,
+        JSON.stringify({
+          adapter: path.resolve("src/failureship.ts"),
+          baseline,
+          candidate: build,
+          saveResume: true,
+          inputs: {
+            scenario: "save-resume",
+            strategy: "answer-and-resume",
+            seed: 2,
+            settings: { width: 1280, height: 800 },
+          },
+        }),
+      );
+      return manifest;
+    }
+    async function run(source) {
+      const result = await command(
         process.execPath,
         ["src/benchmark.ts", source, root],
         {
-          encoding: "utf8",
-          timeout: 60_000,
+          timeout: 390_000,
         },
       );
-      assert.equal(result.status, 1, result.stderr);
+      assert.equal(result.status, 1, result.error ?? result.stderr);
       assert.ok(result.stdout.trim(), result.stderr);
       return result.stdout.trim();
     }
-    const reportPath = run(manifest);
+    const [reportPath, blockedReportPath] = await Promise.all([
+      comparison(candidate).then(run),
+      comparison(blocked).then(run),
+    ]);
     const report = JSON.parse(await readFile(reportPath, "utf8"));
     const { saveResume } = report;
     assert.equal(saveResume.baseline.status, "passed");
@@ -101,8 +110,14 @@ test(
       path.join(directory, saveResume.candidate.screenshot),
     );
     assert.equal(screenshot.toString("ascii", 1, 4), "PNG");
-    const replay = run(path.join(directory, report.replay));
+    const replay = await run(path.join(directory, report.replay));
     const replayed = JSON.parse(await readFile(replay, "utf8"));
     assert.equal(replayed.saveResume.candidate.step, "reload");
+    const cannotContinue = JSON.parse(
+      await readFile(blockedReportPath, "utf8"),
+    );
+    assert.equal(cannotContinue.saveResume.candidate.status, "failed");
+    assert.equal(cannotContinue.saveResume.candidate.step, "continue");
+    assert.match(cannotContinue.saveResume.candidate.reason, /enabled answer/);
   },
 );

@@ -21,6 +21,11 @@ export async function verifySaveResume(page: Page): Promise<ResumeEvent> {
   const inbox = page.getByTestId("open-inbox");
   const panel = page.getByTestId("panel-result");
   const answer = panel.getByTestId("answer-result");
+  const nextMessage = page
+    .locator('[data-testid="inbox-item"][data-to-answer="true"]:enabled')
+    .first();
+  const notification = page.getByTestId("panel-notification");
+  const choices = notification.locator('[data-testid^="option-"]:enabled');
   async function snapshot() {
     return stateSchema.parse({
       month: (await page.getByTestId("month").textContent({ timeout }))?.trim(),
@@ -34,15 +39,8 @@ export async function verifySaveResume(page: Page): Promise<ResumeEvent> {
   try {
     const initial = await inbox.textContent({ timeout });
     await inbox.click({ timeout });
-    await page
-      .locator('[data-testid="inbox-item"][data-to-answer="true"]')
-      .first()
-      .click({ timeout });
-    await page
-      .getByTestId("panel-notification")
-      .locator('[data-testid^="option-"]:enabled')
-      .first()
-      .click({ timeout });
+    await nextMessage.click({ timeout });
+    await choices.first().click({ timeout });
     before = await snapshot();
     if (!initial?.trim() || before.remaining === initial.trim())
       throw new Error(
@@ -74,7 +72,10 @@ export async function verifySaveResume(page: Page): Promise<ResumeEvent> {
     step = "continue";
     await panel.getByTestId("continue").click({ timeout });
     await panel.waitFor({ state: "hidden", timeout });
-    await page.getByTestId("inbox-item").first().waitFor({ timeout });
+    await nextMessage.click({ timeout });
+    await notification.waitFor({ timeout });
+    if (!(await choices.first().isVisible()))
+      throw new Error("The next notification did not offer an enabled answer.");
     return { event: "save-resume", status: "passed", step, before, after };
   } catch (error) {
     return {

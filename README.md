@@ -110,7 +110,7 @@ From the gameBench root in PowerShell 7 with Node.js 24.13 or later and two Fail
 npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run failureship:save-resume -- C:/builds/baseline/dist BASELINE_SHA C:/builds/candidate/dist CANDIDATE_SHA
 ```
 
-Use builds produced with `npm.cmd run build -- --mode e2e` in the respective Failureship checkouts. The scenario answers a notification in month 7, reloads without the setup parameters, checks that the month, inbox count and answer result are restored, then presses Continue and checks that play advances. Open the printed report and inspect both builds under `saveResume`. Each result links to its log and any captured screenshot. A failure identifies the step and affected build and makes the command exit nonzero. Run the benchmark with the linked `replay.json` to repeat the same check.
+Use builds produced with `npm.cmd run build -- --mode e2e` in the respective Failureship checkouts. The scenario answers a notification in month 7, reloads without the setup parameters, and checks that the month, inbox count and answer result are restored. It then presses Continue and opens the next unanswered notification to check that an enabled choice is available. Open the printed report and inspect both builds under `saveResume`. Each result links to its log and any captured screenshot. A failure identifies the step and affected build and makes the command exit nonzero. Run the benchmark with the linked `replay.json` to repeat the same check.
 
 ## Failureship performance review
 
