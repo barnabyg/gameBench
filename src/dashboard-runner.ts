@@ -106,6 +106,15 @@ function inside(root: string, target: string) {
   );
 }
 
+function escapesCheckout(output: string) {
+  const relative = path.normalize(output);
+  return (
+    Boolean(path.parse(relative).root) ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`)
+  );
+}
+
 function assertSuccess(
   result: CommandResult,
   label: string,
@@ -286,11 +295,7 @@ export class DashboardRunner {
       throw new Error(
         `Adapter file is unavailable: ${adapter}. Correct ${source} and retry.`,
       );
-    const checkout = path.join(this.outputRoot, "checkout");
-    if (
-      path.isAbsolute(recipe.build.output) ||
-      !inside(checkout, path.resolve(checkout, recipe.build.output))
-    )
+    if (escapesCheckout(recipe.build.output))
       throw new Error(
         `Set build.output in ${source} to a path inside the checkout and retry.`,
       );
@@ -386,9 +391,9 @@ export class DashboardRunner {
     const build = async (role: "baseline" | "candidate", version: string) => {
       const checkout = path.join(directory, role);
       await mkdir(checkout);
-      const output = path.resolve(checkout, recipe.build.output);
-      if (!inside(checkout, output))
+      if (escapesCheckout(recipe.build.output))
         throw new Error("The build output must stay inside the checkout.");
+      const output = path.resolve(checkout, recipe.build.output);
 
       const git = async (step: string, args: string[]) => {
         const evidence = path.join(directory, `${role}-${step}.log`);

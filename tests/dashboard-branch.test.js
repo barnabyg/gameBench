@@ -217,6 +217,17 @@ test(
         recipeFile,
         JSON.stringify({
           ...game.recipe,
+          build: { output: "../checkout/dist" },
+        }),
+      );
+      await run.click();
+      await page.getByText(/Set build\.output.*inside the checkout/).waitFor();
+      await repo.getByText("Needs setup").waitFor();
+
+      await writeFile(
+        recipeFile,
+        JSON.stringify({
+          ...game.recipe,
           comparison: {
             ...game.recipe.comparison,
             adapter: path.relative(
