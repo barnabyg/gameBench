@@ -50,10 +50,20 @@ async function compare(source: string, output: string) {
       throw new Error(
         `${role} (${build.version}) failed: ${result.error?.message ?? result.stderr}. Evidence: ${directory}`,
       );
-    const lines = result.stdout.trim().split("\n");
+    const lines = result.stdout.replace(/\r?\n$/, "").split("\n");
+    let lastEvent: unknown;
+    for (const [index, line] of lines.entries()) {
+      try {
+        lastEvent = z.record(z.string(), z.unknown()).parse(JSON.parse(line));
+      } catch {
+        throw new Error(
+          `Invalid event in ${path.join(directory, log)} at line ${index + 1}`,
+        );
+      }
+    }
     const milestone = z
       .object({ event: z.literal("milestone"), turn: z.int().nonnegative() })
-      .parse(JSON.parse(lines.at(-1) ?? ""));
+      .parse(lastEvent);
     return { version: build.version, turns: milestone.turn, log };
   }
   const baseline = await run("baseline");
