@@ -7,6 +7,7 @@ import { type Browser, chromium, type Page } from "playwright";
 import sirv from "sirv";
 import { z } from "zod";
 import { inspectPromotion } from "./promotion-layout.ts";
+import { checkpoints, checkpointFile } from "./visual-checkpoints.ts";
 
 const { build, screenshot, failureScreenshot, checkpointDirectory, inputs } = z
   .object({
@@ -112,13 +113,13 @@ async function capturePage(page: Page, filename: string) {
 async function captureFloors(browser: Browser, origin: URL, directory: string) {
   const floors = [
     {
-      checkpoint: "ground-floor",
+      checkpoint: checkpoints.ground,
       month: 1,
       work: "hotspot-work",
       title: "Junior employee",
     },
     {
-      checkpoint: "top-floor",
+      checkpoint: checkpoints.top,
       month: 12,
       work: "hotspot-work-3",
       title: "Middle manager",
@@ -140,7 +141,7 @@ async function captureFloors(browser: Browser, origin: URL, directory: string) {
         .getByTestId("job-title")
         .filter({ hasText: floor.title })
         .waitFor({ timeout: 15000 });
-      if (floor.checkpoint === "top-floor") {
+      if (floor.checkpoint === checkpoints.top) {
         const arrival = page
           .getByTestId("panel-notice")
           .filter({ hasText: "Congratulations: Middle manager" });
@@ -151,7 +152,10 @@ async function captureFloors(browser: Browser, origin: URL, directory: string) {
         await arrival.waitFor({ state: "hidden", timeout: 15000 });
       }
       await page.getByTestId(floor.work).waitFor({ timeout: 15000 });
-      await capturePage(page, path.join(directory, `${floor.checkpoint}.png`));
+      await capturePage(
+        page,
+        path.join(directory, checkpointFile(floor.checkpoint)),
+      );
       event({
         event: "visual-checkpoint",
         checkpoint: floor.checkpoint,
@@ -209,7 +213,7 @@ try {
       if (inputs.scenario === "visual-review" && checkpointDirectory) {
         await copyFile(
           screenshot,
-          path.join(checkpointDirectory, "promotion.png"),
+          path.join(checkpointDirectory, checkpointFile(checkpoints.promotion)),
         );
       }
       if (inputs.settings.checkLayout) {

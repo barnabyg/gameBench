@@ -3,6 +3,11 @@ import path from "node:path";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import { z } from "zod";
+import {
+  checkpoints as ids,
+  checkpointFile,
+  type Checkpoint,
+} from "./visual-checkpoints.ts";
 
 export const visualReviewSchema = z.object({
   width: z.int().min(1).max(4096),
@@ -10,10 +15,10 @@ export const visualReviewSchema = z.object({
   changedPixelRatio: z.number().gt(0).lte(1),
 });
 const checkpoints = [
-  { checkpoint: "ground-floor", label: "Ground floor" },
-  { checkpoint: "promotion", label: "First promotion" },
-  { checkpoint: "penthouse", label: "Penthouse" },
-  { checkpoint: "top-floor", label: "Floor 3, highest playable floor" },
+  { checkpoint: ids.ground, label: "Ground floor" },
+  { checkpoint: ids.promotion, label: "First promotion" },
+  { checkpoint: ids.penthouse, label: "Penthouse" },
+  { checkpoint: ids.top, label: "Floor 3, highest playable floor" },
 ] as const;
 const roles = ["baseline", "candidate"] as const;
 
@@ -24,11 +29,8 @@ export async function reviewVisuals(
 ) {
   const { width, height, changedPixelRatio } = settings;
   const resolution = { width, height };
-  async function capture(
-    role: (typeof roles)[number],
-    checkpoint: (typeof checkpoints)[number]["checkpoint"],
-  ) {
-    const screenshot = path.join(role, `${checkpoint}.png`);
+  async function capture(role: (typeof roles)[number], checkpoint: Checkpoint) {
+    const screenshot = path.join(role, checkpointFile(checkpoint));
     const version = versions[role];
     try {
       const bytes = await readFile(path.join(directory, screenshot));
@@ -51,7 +53,7 @@ export async function reviewVisuals(
             version,
             status: "missing",
             reason:
-              checkpoint === "penthouse"
+              checkpoint === ids.penthouse
                 ? "No playable penthouse capture. See Floor 3 if available."
                 : "No screenshot was captured. See the build log.",
           },
