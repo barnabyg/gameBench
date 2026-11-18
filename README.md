@@ -2,6 +2,16 @@
 
 Compare a candidate build with a baseline under the same scenario, strategy, settings, and random seed. This first slice includes a controlled delivery scenario.
 
+## Start the dashboard on Windows
+
+From the gameBench root in PowerShell 7 with Node.js 24.13 or later, run:
+
+```powershell
+npm.cmd ci && .\run.bat
+```
+
+Open the local URL printed in the terminal to see the dashboard. After installing dependencies, you can also double-click `run.bat` in File Explorer. Press Ctrl+C in the terminal to stop the dashboard.
+
 ## Inspect a saved run in the dashboard
 
 From the gameBench root in PowerShell 7 with Node.js 24.13 or later and a saved Failureship visual report, run:
