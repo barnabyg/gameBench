@@ -207,6 +207,7 @@ async function loadReports() {
   } catch {
     resultCount.textContent =
       "Reports could not be loaded. Refresh to try again.";
+    throw new Error("Reports could not be loaded.");
   }
 }
 
@@ -237,7 +238,11 @@ const selected = new Set();
 const selectedBranches = new Map();
 const branchLookups = new Map();
 let running = false;
+let submitting = false;
 let shownRuns;
+let pollTimer;
+let pollVersion = 0;
+let retryDelay = 700;
 
 async function api(route, options) {
   const response = await fetch(route, options);
@@ -298,14 +303,25 @@ function branchPicker(repo) {
   return controls;
 }
 
-function renderRepositories() {
+function matchingRepositories() {
   const term = repositorySearch.value.trim().toLowerCase();
-  const matches = repositories.filter((repo) =>
+  return repositories.filter((repo) =>
     repo.fullName.toLowerCase().includes(term),
   );
-  repositoryStatus.textContent = matches.length
-    ? `${matches.length} repositories`
-    : "No matching repositories.";
+}
+
+function repositoryCount(count = matchingRepositories().length) {
+  const label = count
+    ? `${count} ${count === 1 ? "repository" : "repositories"}`
+    : "No matching repositories";
+  const selectedCount = readySelection().length;
+  return selectedCount ? `${label} · ${selectedCount} selected` : label;
+}
+
+function renderRepositories() {
+  const matches = matchingRepositories();
+  if (!repositoryStatus.dataset.pollError)
+    repositoryStatus.textContent = repositoryCount(matches.length);
   repositoryList.replaceChildren(
     ...matches.map((repo) => {
       const checkbox = element("input");
@@ -334,6 +350,8 @@ function renderRepositories() {
           controls.querySelector(".branch-picker")?.remove();
         }
         localStorage.setItem(selectionKey, JSON.stringify([...selected]));
+        if (!repositoryStatus.dataset.pollError)
+          repositoryStatus.textContent = repositoryCount(matches.length);
         enableRun();
       });
       row.append(label, controls);
@@ -351,7 +369,7 @@ function readySelection() {
 }
 
 function enableRun() {
-  runSelected.disabled = running || !readySelection().length;
+  runSelected.disabled = running || submitting || !readySelection().length;
 }
 
 repositoryPanel.addEventListener("toggle", async () => {
@@ -419,21 +437,34 @@ function renderRuns(jobs) {
 }
 
 async function checkRuns() {
-  const jobs = await api("/api/runs");
-  await loadReports();
-  renderRuns(jobs);
-  running = jobs.some((job) => job.status === "Running");
-  enableRun();
-  if (running) setTimeout(() => void checkRuns().catch(showRunError), 700);
-}
-
-function showRunError(error) {
-  repositoryStatus.textContent = error.message;
-  running = false;
-  enableRun();
+  const version = ++pollVersion;
+  clearTimeout(pollTimer);
+  try {
+    const jobs = await api("/api/runs");
+    if (version !== pollVersion) return;
+    await loadReports();
+    if (version !== pollVersion) return;
+    renderRuns(jobs);
+    running = jobs.some((job) => job.status === "Running");
+    enableRun();
+    if (repositoryStatus.dataset.pollError) {
+      delete repositoryStatus.dataset.pollError;
+      if (repositories) repositoryStatus.textContent = repositoryCount();
+    }
+    retryDelay = 700;
+    if (running) pollTimer = setTimeout(checkRuns, retryDelay);
+  } catch {
+    if (version !== pollVersion) return;
+    repositoryStatus.dataset.pollError = "true";
+    repositoryStatus.textContent =
+      "Run status temporarily unavailable. Retrying…";
+    retryDelay = Math.min(retryDelay * 2, 8_000);
+    pollTimer = setTimeout(checkRuns, retryDelay);
+  }
 }
 
 runSelected.addEventListener("click", async () => {
+  submitting = true;
   running = true;
   enableRun();
   try {
@@ -447,10 +478,12 @@ runSelected.addEventListener("click", async () => {
         })),
       }),
     });
-    await checkRuns();
   } catch (error) {
-    showRunError(error);
+    repositoryStatus.textContent = error.message;
+  } finally {
+    submitting = false;
+    await checkRuns();
   }
 });
 
-await checkRuns().catch(showRunError);
+await checkRuns();

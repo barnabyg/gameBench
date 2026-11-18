@@ -194,7 +194,25 @@ test(
       });
       assert.equal(await picker.inputValue(), "");
       await picker.selectOption(branch);
+      let failedStatusRead = false;
+      let startedRun = false;
+      await page.route("**/api/runs", async (route) => {
+        if (route.request().method() === "POST") startedRun = true;
+        else if (startedRun && !failedStatusRead) {
+          failedStatusRead = true;
+          await route.fulfill({
+            status: 502,
+            json: { error: "Temporary failure" },
+          });
+          return;
+        }
+        await route.continue();
+      });
       await page.getByRole("button", { name: "Run selected" }).click();
+      await page.getByText(/Run status temporarily unavailable/).waitFor();
+      assert.ok(
+        await page.getByRole("button", { name: "Run selected" }).isDisabled(),
+      );
       await page
         .getByRole("link", { name: "Open report" })
         .click({ timeout: 45_000 });
