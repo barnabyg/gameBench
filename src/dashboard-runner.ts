@@ -14,6 +14,11 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import {
+  buildSmokeReport,
+  type BuildRole,
+  requireNpmBuild,
+} from "./dashboard-build-smoke.ts";
 import { command, type CommandResult } from "./dashboard-command.ts";
 import { comparisonBaselineSchema } from "./dashboard-reports.ts";
 import { visualReviewSchema } from "./visual-review.ts";
@@ -26,9 +31,14 @@ const repositoryName = z
     "Invalid GitHub repository name",
   );
 const commitId = z.string().regex(/^[a-f\d]{40}$/i);
-const recipeSchema = z.object({
+const recipeIdentity = z.object({
   repository: repositoryName,
   baseline: commitId,
+});
+const buildSmokeRecipeSchema = recipeIdentity.extend({
+  buildSmoke: z.literal(true),
+});
+const recipeSchema = recipeIdentity.extend({
   build: z.object({
     args: z.array(z.string()).default([]),
     output: z.string().min(1),
@@ -46,6 +56,9 @@ const recipeSchema = z.object({
   }),
 });
 type Recipe = z.infer<typeof recipeSchema>;
+const savedRecipeSchema = z.union([buildSmokeRecipeSchema, recipeSchema]);
+type SavedRecipe = z.infer<typeof savedRecipeSchema>;
+const buildSmokeOptions = { args: [], output: "." };
 const catalogSchema = z.array(
   z.array(
     z.object({
@@ -197,12 +210,14 @@ export class DashboardRunner {
   private configPath: string | undefined;
   private outputRoot: string;
   private setupState: string;
-  private savedRecipes = new Map<string, Recipe>();
+  private setupSources: string;
+  private savedRecipes = new Map<string, SavedRecipe>();
 
   constructor(configPath: string | undefined, outputRoot: string) {
     this.configPath = configPath && path.resolve(configPath);
     this.outputRoot = path.resolve(outputRoot);
     this.setupState = path.join(this.outputRoot, "dashboard-setup");
+    this.setupSources = path.join(this.outputRoot, "setup-recipes");
   }
 
   async restoreSetups() {
@@ -211,7 +226,7 @@ export class DashboardRunner {
     for (const entry of entries) {
       if (!entry.isFile() || !/^repo-.+\.json$/.test(entry.name)) continue;
       try {
-        const recipe = recipeSchema.parse(
+        const recipe = savedRecipeSchema.parse(
           JSON.parse(
             await readFile(path.join(this.setupState, entry.name), "utf8"),
           ),
@@ -219,7 +234,8 @@ export class DashboardRunner {
         const key = recipe.repository.toLowerCase();
         if (
           entry.name !== this.recipeFilename(key) ||
-          !path.isAbsolute(recipe.comparison.adapter)
+          ("comparison" in recipe &&
+            !path.isAbsolute(recipe.comparison.adapter))
         )
           throw new Error(
             "The saved recipe has the wrong repository or adapter path.",
@@ -236,7 +252,7 @@ export class DashboardRunner {
   }
 
   private async games() {
-    const games = new Map(
+    const games = new Map<string, SavedRecipe>(
       [failureship, growOrDie].map((game) => [
         game.repository.toLowerCase(),
         game,
@@ -268,21 +284,26 @@ export class DashboardRunner {
 
   private async prepareSetup(
     fullName: string,
+    allowBuildSmoke: boolean,
     onProgress: (message: string) => void,
   ) {
     onProgress("Validating benchmark setup.");
     const key = repositoryName.parse(fullName).toLowerCase();
-    const source = path.join(
-      this.outputRoot,
-      "setup-recipes",
-      this.recipeFilename(key),
-    );
+    const source = path.join(this.setupSources, this.recipeFilename(key));
     let recipe: Recipe;
     try {
       recipe = recipeSchema.parse(JSON.parse(await readFile(source, "utf8")));
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT")
-        throw new Error(`Add a trusted recipe at ${source} and retry.`);
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        if (allowBuildSmoke) return;
+        throw new Error(
+          `Add a trusted recipe at ${source} or reload the dashboard to approve build smoke.`,
+        );
+      }
       const detail =
         error instanceof z.ZodError ? z.prettifyError(error) : String(error);
       throw new Error(`Could not read benchmark recipe ${source}: ${detail}`);
@@ -316,7 +337,7 @@ export class DashboardRunner {
     };
   }
 
-  private async confirmSetup(recipe: Recipe, report: string) {
+  private async confirmSetup(recipe: SavedRecipe, report: string) {
     try {
       const { baseline } = comparisonBaselineSchema.parse(
         JSON.parse(await readFile(report, "utf8")),
@@ -329,7 +350,7 @@ export class DashboardRunner {
     }
   }
 
-  private async saveSetup(recipe: Recipe) {
+  private async saveSetup(recipe: SavedRecipe) {
     const key = recipe.repository.toLowerCase();
     const destination = path.join(this.setupState, this.recipeFilename(key));
     const pending = `${destination}.${randomUUID()}.tmp`;
@@ -356,17 +377,28 @@ export class DashboardRunner {
   }
 
   async repositories() {
-    const [games, response] = await Promise.all([
+    const [games, response, sources] = await Promise.all([
       this.games(),
       this.api("user/repos", ["--paginate", "--slurp"]),
+      readdir(this.setupSources).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      }),
     ]);
+    const staged = new Set(sources);
     const repositories = catalogSchema.parse(JSON.parse(response)).flat();
-    return repositories.map((repo) => ({
-      name: repo.name,
-      fullName: repo.full_name,
-      defaultBranch: repo.default_branch,
-      ready: games.has(repo.full_name.toLowerCase()),
-    }));
+    return repositories.map((repo) => {
+      const key = repo.full_name.toLowerCase();
+      const ready = games.has(key);
+      return {
+        name: repo.name,
+        fullName: repo.full_name,
+        defaultBranch: repo.default_branch,
+        ready,
+        needsBuildSmokeApproval:
+          !ready && !staged.has(this.recipeFilename(key)),
+      };
+    });
   }
 
   async branches(fullName: string) {
@@ -387,12 +419,14 @@ export class DashboardRunner {
   async run(
     fullName: string,
     branch: string,
+    allowBuildSmoke: boolean,
     onProgress: (message: string) => void,
   ) {
     const configured = await this.recipeFor(fullName);
-    const recipe =
-      configured ?? (await this.prepareSetup(fullName, onProgress));
-    const { repository } = recipe;
+    const prepared =
+      configured ??
+      (await this.prepareSetup(fullName, allowBuildSmoke, onProgress));
+    const repository = prepared?.repository ?? fullName;
 
     onProgress(`Resolving branch ${branch}`);
     const candidate = commitId.parse(
@@ -404,15 +438,22 @@ export class DashboardRunner {
         ),
       ),
     );
+    const recipe: SavedRecipe = prepared ?? {
+      repository,
+      baseline: candidate,
+      buildSmoke: true,
+    };
+    const smoke = "buildSmoke" in recipe;
+    const options = smoke ? buildSmokeOptions : recipe.build;
     await mkdir(this.outputRoot, { recursive: true });
     const directory = await mkdtemp(path.join(this.outputRoot, "dashboard-"));
 
-    const build = async (role: "baseline" | "candidate", version: string) => {
+    const build = async (role: BuildRole, version: string) => {
       const checkout = path.join(directory, role);
       await mkdir(checkout);
-      if (escapesCheckout(recipe.build.output))
+      if (escapesCheckout(options.output))
         throw new Error("The build output must stay inside the checkout.");
-      const output = path.resolve(checkout, recipe.build.output);
+      const output = path.resolve(checkout, options.output);
 
       const git = async (step: string, args: string[]) => {
         const evidence = path.join(directory, `${role}-${step}.log`);
@@ -444,6 +485,7 @@ export class DashboardRunner {
       );
       if (!packageFile?.isFile())
         throw new Error(`${role} checkout has no package.json to build.`);
+      if (smoke) await requireNpmBuild(checkout, role);
 
       const npm = async (step: string, args: string[]) => {
         const [executable, argv] = npmCommand(["--prefix", checkout, ...args]);
@@ -463,7 +505,7 @@ export class DashboardRunner {
       onProgress(`Installing ${role} dependencies`);
       await npm("install", ["ci", "--no-audit", "--no-fund"]);
       onProgress(`Building ${role}`);
-      await npm("build", ["run", "build", "--", ...recipe.build.args]);
+      await npm("build", ["run", "build", "--", ...options.args]);
       const actualOutput = await realpath(output);
       if (
         !inside(await realpath(checkout), actualOutput) ||
@@ -474,6 +516,27 @@ export class DashboardRunner {
         );
       return { build: actualOutput, version };
     };
+
+    if (smoke) {
+      const { report, passed } = await buildSmokeReport(
+        directory,
+        recipe.baseline,
+        candidate,
+        build,
+      );
+      const setupError =
+        !configured && !passed
+          ? "Build smoke failed before setup could be saved. Open the report for evidence and retry."
+          : configured
+            ? undefined
+            : await this.confirmSetup(recipe, report);
+      return {
+        reports: [report],
+        passed,
+        setupComplete: !configured && !setupError,
+        setupError,
+      };
+    }
 
     const baseline = await build("baseline", recipe.baseline);
     const candidateBuild = await build("candidate", candidate);

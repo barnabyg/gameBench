@@ -36,7 +36,7 @@ npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run dashboard
 
 Open the printed URL, expand GitHub repositories, and search for Failureship. Check the Ready repository and choose **Run selected**. The dashboard builds the latest default-branch commit and the pinned baseline with the same settings. Once the run finishes, choose **Open report** to inspect the outcome and evidence. Reopening the dashboard on the same local URL remembers checked repositories. Completed reports and their replay files are retained under `benchmark-runs/`.
 
-The dashboard runs build commands from configured game repositories on this machine. The built-in recipes trust `barnabyg/failureship` and `barnabyg/growOrDie`. To run another repository, [provide a trusted local recipe](#set-up-a-repository-on-its-first-run).
+The dashboard runs build commands from trusted repositories on this machine. The built-in recipes cover `barnabyg/failureship` and `barnabyg/growOrDie`. Other repositories can start with [build smoke](#run-build-smoke-for-a-new-repository) or use a [trusted local gameplay recipe](#set-up-a-repository-on-its-first-run).
 
 To check that search and selection work independently, use the same launch command from the gameBench root. Check Failureship, then enter a search that hides it. The selection count still shows **1 selected**. Choose **Run selected** in the selection controls below the repository list and expect a Failureship run.
 
@@ -50,6 +50,14 @@ Use the same launch command and select Failureship and Grow or Die before choosi
 
 Use the same dashboard launch command. Check a Ready repository and use its **Candidate branch** selector, which starts on the default branch. Choose a buildable non-default branch at a known commit, run it, and open the report. Check that **Branch** and **Candidate** identify the selected branch and full commit SHA. If the branch advances, the saved report still refers to the original commit. Use the report selector beside the game name to revisit it after another run.
 
+### Run build smoke for a new repository
+
+Use the same dashboard launch command from the gameBench root. Sign in to GitHub CLI with access to a repository whose root has an npm lockfile and a `build` script. Select the repository marked **Needs setup**, choose **Run selected**, and review the repository names before choosing **Trust and run**. This runs the repositories' npm scripts on this machine.
+
+Build smoke records whether `npm ci` and `npm run build` succeed. The first successful run compares the default branch commit with itself and pins it as the baseline. Later runs compare the selected branch with that pinned commit. Gameplay areas remain **Not measured**. A build failure identifies the failing revision and links its log. If the first run fails, the repository stays **Needs setup** and can be retried.
+
+Verify by choosing **Cancel** the first time and checking that no run starts. Then approve and open the **Build smoke** report. Restart with the same output directory and verify the repository is **Ready**. Run again and check that the baseline commit stays pinned and the dashboard reuses the saved approval.
+
 ### Set up a repository on its first run
 
 From the gameBench root in PowerShell 7, use the prerequisites in [Run Failureship from GitHub](#run-failureship-from-github) and sign in to GitHub CLI with access to a fork of Grow or Die. Launch the dashboard with:
@@ -58,7 +66,7 @@ From the gameBench root in PowerShell 7, use the prerequisites in [Run Failuresh
 npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run dashboard
 ```
 
-Open the printed URL, select your fork under **GitHub repositories**, and choose **Run selected**. The fork starts as **Needs setup**. In **Benchmark runs**, expect a message with the missing recipe path. Create that file under `benchmark-runs/setup-recipes/` with a lower-case name such as `repo-your-account.growordie.json`. Replace `your-account/growOrDie` with the fork’s full name and use a fork that contains the pinned Grow or Die commit.
+Before opening the repository picker, create a file under `benchmark-runs/setup-recipes/` with a lower-case name such as `repo-your-account.growordie.json`. Replace `your-account/growOrDie` with the fork’s full name and use a fork that contains the pinned Grow or Die commit.
 
 ```json
 {
@@ -79,7 +87,7 @@ Open the printed URL, select your fork under **GitHub repositories**, and choose
 
 Create recipes only for repositories and adapters you trust to execute locally. Use a full baseline commit SHA. The repository must support `npm ci` and `npm run build`. Use `build.args` for any arguments to its build script, and set `build.output` to a path inside the checkout. Adapter paths are relative to the recipe file unless absolute.
 
-Retry with **Run selected**. The same run validates the recipe and proceeds to the benchmark. Once the run confirms the recipe can build and execute the baseline, the fork becomes **Ready**. Restart with the same command and run the fork again to check that it reuses the saved setup. The dashboard saves validated recipes under `benchmark-runs/dashboard-setup/` and keeps the adapter at its configured local path. To replace a saved recipe, stop the dashboard, remove that repository’s saved JSON file, update the recipe under `setup-recipes/`, and start the dashboard again. If you pass `--output`, both setup directories are relative to that output directory. Recipes supplied by `--config` remain immediately Ready and take precedence over saved setup for the same repository.
+Select the fork and choose **Run selected**. The same run validates the recipe and proceeds to the benchmark. Once the run confirms the recipe can build and execute the baseline, the fork becomes **Ready**. Restart with the same command and run the fork again to check that it reuses the saved setup. The dashboard saves validated recipes under `benchmark-runs/dashboard-setup/` and keeps the adapter at its configured local path. To replace a saved recipe or upgrade a build smoke check to a gameplay benchmark, stop the dashboard, remove that repository’s saved JSON file, update the recipe under `setup-recipes/`, and start the dashboard again. If you pass `--output`, both setup directories are relative to that output directory. Recipes supplied by `--config` remain immediately Ready and take precedence over saved setup for the same repository.
 
 Close and reopen GitHub repositories to refresh the branch choices for the checked games.
 

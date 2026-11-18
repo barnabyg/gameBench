@@ -56,6 +56,7 @@ const frameTiming = z.object({
   spikes: z.array(z.object({ frame: z.number(), durationMs: z.number() })),
 });
 const reportSchema = z.object({
+  kind: z.literal("build-smoke").optional().catch(undefined),
   inputs: z.object({
     scenario: nonempty,
     strategy: nonempty,
@@ -217,6 +218,7 @@ export async function loadReport(
       id,
       game,
       branch,
+      kind: "inputs" in report ? report.kind : undefined,
       checks,
       visualThreshold,
       pacingThreshold,
@@ -259,6 +261,31 @@ function emptyChecks(): Checks {
 }
 
 function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
+  if (report.kind === "build-smoke") {
+    const checks = emptyChecks();
+    const passed = roles.every((role) => report[role].status === "reached");
+    const orderedRoles =
+      report.candidate.status === "reached" && !passed
+        ? roles
+        : (["candidate", "baseline"] as const);
+    checks.Stability = {
+      status: passed ? "Passed" : "Failed",
+      regression:
+        report.baseline.status === "reached" &&
+        report.candidate.status === "failed",
+      findings: orderedRoles.map((role) => {
+        const result = report[role];
+        return {
+          summary:
+            result.status === "reached"
+              ? `${names[role]} built successfully.`
+              : `${names[role]} build failed. ${result.error ?? ""}`.trimEnd(),
+          evidence: link(`${names[role]} log`, result.log),
+        };
+      }),
+    };
+    return checks;
+  }
   const logs = roles.flatMap((key) =>
     link(`${names[key]} log`, report[key].log),
   );

@@ -20,7 +20,11 @@ type Job = {
   reportIds: string[];
   setupComplete?: true;
 };
-type Selection = { repository: string; branch?: string };
+type Selection = {
+  repository: string;
+  branch?: string;
+  allowBuildSmoke?: true;
+};
 
 export class DashboardJobs {
   private runner: DashboardRunner;
@@ -75,21 +79,23 @@ export class DashboardJobs {
       const catalog = await this.repositories();
       const available = new Map(catalog.map((item) => [item.fullName, item]));
       const names = new Set();
-      const jobs = repositories.flatMap(({ repository, branch }) => {
-        const repo = available.get(repository);
-        if (!repo || names.has(repository)) return [];
-        names.add(repository);
-        const job: Job = {
-          id: randomUUID(),
-          repository,
-          branch: branch ?? repo.defaultBranch,
-          status: "Running",
-          message: "Preparing benchmark.",
-          reportIds: [],
-        };
-        return [job];
-      });
-      if (jobs.length !== repositories.length) {
+      const entries = repositories.flatMap(
+        ({ repository, branch, allowBuildSmoke }) => {
+          const repo = available.get(repository);
+          if (!repo || names.has(repository)) return [];
+          names.add(repository);
+          const job: Job = {
+            id: randomUUID(),
+            repository,
+            branch: branch ?? repo.defaultBranch,
+            status: "Running",
+            message: "Preparing benchmark.",
+            reportIds: [],
+          };
+          return [{ job, allowBuildSmoke }];
+        },
+      );
+      if (entries.length !== repositories.length) {
         this.active = false;
         return {
           status: 400,
@@ -97,8 +103,13 @@ export class DashboardJobs {
             "Select distinct repositories from the GitHub repository list.",
         };
       }
+      const jobs = entries.map(({ job }) => job);
       this.jobs.unshift(...jobs);
-      void Promise.all(jobs.map((job) => this.run(job))).finally(() => {
+      void Promise.all(
+        entries.map(({ job, allowBuildSmoke }) =>
+          this.run(job, allowBuildSmoke),
+        ),
+      ).finally(() => {
         this.active = false;
       });
       return { status: 202, jobs };
@@ -108,11 +119,12 @@ export class DashboardJobs {
     }
   }
 
-  private async run(job: Job) {
+  private async run(job: Job, allowBuildSmoke = false) {
     try {
       const result = await this.runner.run(
         job.repository,
         job.branch,
+        allowBuildSmoke,
         (progress) => {
           job.message = progress;
         },
