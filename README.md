@@ -21,3 +21,15 @@ A comparison manifest names a trusted local Node adapter and two builds, each wi
 ## Verification
 
 Run `npm.cmd run verify` from the repository root. It checks formatting, lint (including secret detection), strict types, command-level tests, dependency advisories and the npm package contents. TypeScript executes directly on Node, so there is no compilation or bundling step.
+
+## Failureship first-promotion check
+
+From the gameBench root, with dependencies installed, Chromium provisioned by `npx.cmd playwright install chromium`, and two Failureship builds produced with `npm.cmd run build -- --mode e2e` in their respective checkouts, run:
+
+```powershell
+npm.cmd run failureship:smoke -- C:/builds/baseline/dist BASELINE_SHA C:/builds/candidate/dist CANDIDATE_SHA 1280 800
+```
+
+Replace the example paths and version identifiers with your builds. The last two arguments are the viewport width and height in pixels. The check opens a fresh browser for each build, starts seed 2 at month 7 using the game's E2E setup, and plays through the promotion decision. Expect the Team lead notice in both screenshots linked by the report. The command exits nonzero if the required outcome fails. The evidence directory includes the replay manifest, action logs, and a screenshot of the failed browser state when it can be captured.
+
+Pull requests run this same command against two pinned Failureship commits. Download the `failureship-first-promotion` artifact from the check to inspect its evidence.

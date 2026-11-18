@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
@@ -38,9 +38,14 @@ async function compare(source: string, output: string) {
   await save("replay.json", manifest);
   async function run(role: "baseline" | "candidate") {
     const build = manifest[role];
+    const screenshot = `${role}-promotion.png`;
     const result = spawnSync(process.execPath, [manifest.adapter], {
       encoding: "utf8",
-      input: JSON.stringify({ build: build.build, inputs: manifest.inputs }),
+      input: JSON.stringify({
+        build: build.build,
+        inputs: manifest.inputs,
+        screenshot: path.join(directory, screenshot),
+      }),
       timeout: 180000,
       maxBuffer: 16 * 1024 * 1024,
     });
@@ -64,7 +69,16 @@ async function compare(source: string, output: string) {
     const milestone = z
       .object({ event: z.literal("milestone"), turn: z.int().nonnegative() })
       .parse(lastEvent);
-    return { version: build.version, turns: milestone.turn, log };
+    const captured = await access(path.join(directory, screenshot)).then(
+      () => true,
+      () => false,
+    );
+    return {
+      version: build.version,
+      turns: milestone.turn,
+      log,
+      ...(captured ? { screenshot } : {}),
+    };
   }
   const baseline = await run("baseline");
   const candidate = await run("candidate");

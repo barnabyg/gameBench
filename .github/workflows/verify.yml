@@ -1,5 +1,8 @@
 name: Verify
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
 jobs:
@@ -14,3 +17,55 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
+  first-promotion:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      BASELINE: f6c354054ab0f48413d9c1ce1aa35f518b70d2a3
+      CANDIDATE: eeb1074ecc51d995d4fd4d84e7a8bd0f3c3027d1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: barnabyg/failureship
+          ref: ${{ env.BASELINE }}
+          path: benchmark-runs/baseline
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: barnabyg/failureship
+          ref: ${{ env.CANDIDATE }}
+          path: benchmark-runs/candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.0
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            benchmark-runs/baseline/package-lock.json
+            benchmark-runs/candidate/package-lock.json
+      - run: npm ci
+      - run: npx playwright install chromium
+      - name: Build Failureship revisions
+        shell: pwsh
+        run: |
+          foreach ($role in 'baseline', 'candidate') {
+            Push-Location "benchmark-runs/$role"
+            try {
+              npm ci
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+              npm run build -- --mode e2e --outDir dist-benchmark
+              if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            } finally { Pop-Location }
+          }
+      - name: Compare first-promotion screens
+        shell: pwsh
+        run: npm run failureship:smoke -- benchmark-runs/baseline/dist-benchmark $env:BASELINE benchmark-runs/candidate/dist-benchmark $env:CANDIDATE 1280 800
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: failureship-first-promotion
+          path: benchmark-runs/failureship-*/
+          if-no-files-found: ignore
