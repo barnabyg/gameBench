@@ -102,6 +102,16 @@ Pull requests run this same command against two pinned Failureship commits. Down
 
 If either build exits early or misses the milestone, the runner still attempts both builds and prints the report path before returning a nonzero exit code. The report includes the scenario and seed, both builds' statuses and logs, and counts of attempted, reached, and missing milestones. A missing milestone has a null turn count, and the comparison has a null turn difference.
 
+## Failureship save and resume
+
+From the gameBench root in PowerShell 7 with Node.js 24.13 or later and two Failureship E2E builds, run:
+
+```powershell
+npm.cmd ci && npx.cmd playwright install chromium && npm.cmd run failureship:save-resume -- C:/builds/baseline/dist BASELINE_SHA C:/builds/candidate/dist CANDIDATE_SHA
+```
+
+Use builds produced with `npm.cmd run build -- --mode e2e` in the respective Failureship checkouts. The scenario answers a notification in month 7, reloads without the setup parameters, checks that the month, inbox count and answer result are restored, then presses Continue and checks that play advances. Open the printed report and inspect both builds under `saveResume`. Each result links to its log and any captured screenshot. A failure identifies the step and affected build and makes the command exit nonzero. Run the benchmark with the linked `replay.json` to repeat the same check.
+
 ## Failureship strategy batch
 
 From the gameBench root, with Node.js 24.13 or later and two clean Failureship Git checkouts at the revisions to compare with dependencies installed by `npm.cmd ci` in each, run:

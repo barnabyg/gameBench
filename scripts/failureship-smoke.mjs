@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const visual = args[0] === "--visual";
-if (visual) args.shift();
+const saveResume = args[0] === "--save-resume";
+if (visual || saveResume) args.shift();
+const command = visual ? "visual" : saveResume ? "save-resume" : "smoke";
 const [
   baseline,
   baselineVersion,
@@ -16,7 +18,7 @@ const [
 ] = args;
 if (!baseline || !baselineVersion || !candidate || !candidateVersion) {
   console.error(
-    `Usage: npm run failureship:${visual ? "visual" : "smoke"} -- <baseline dist> <baseline version> <candidate dist> <candidate version> [width] [height]`,
+    `Usage: npm run failureship:${command} -- <baseline dist> <baseline version> <candidate dist> <candidate version> [width] [height]`,
   );
   process.exit(1);
 }
@@ -31,6 +33,7 @@ await writeFile(
     adapter: fileURLToPath(new URL("../src/failureship.ts", import.meta.url)),
     baseline: { build: path.resolve(baseline), version: baselineVersion },
     candidate: { build: path.resolve(candidate), version: candidateVersion },
+    ...(saveResume ? { saveResume: true } : {}),
     ...(visual
       ? {
           visualReview: {
@@ -41,13 +44,17 @@ await writeFile(
         }
       : {}),
     inputs: {
-      scenario: visual ? "visual-review" : "first-promotion",
-      strategy: "seek-team-lead",
+      scenario: visual
+        ? "visual-review"
+        : saveResume
+          ? "save-resume"
+          : "first-promotion",
+      strategy: saveResume ? "answer-and-resume" : "seek-team-lead",
       seed: 2,
       settings: {
         width: Number(width),
         height: Number(height),
-        checkLayout: !visual,
+        checkLayout: !visual && !saveResume,
       },
     },
   }),

@@ -43,6 +43,12 @@ const issues = z.array(
     other: z.string().optional(),
   }),
 );
+const resumeOutcome = z.object({
+  status: z.enum(["passed", "failed", "unavailable"]),
+  step: z.string().optional(),
+  reason: z.string().optional(),
+  line: z.number().optional(),
+});
 const reportSchema = z.object({
   inputs: z.object({
     scenario: nonempty,
@@ -52,6 +58,9 @@ const reportSchema = z.object({
   }),
   baseline: role,
   candidate: role,
+  saveResume: z
+    .object({ baseline: resumeOutcome, candidate: resumeOutcome })
+    .optional(),
   layout: z
     .object({
       status: z.enum(["passed", "failed"]),
@@ -251,7 +260,34 @@ function comparisonChecks(report: z.infer<typeof reportSchema>, link: Link) {
       },
     ],
   };
-  if (report.candidate.error)
+  if (report.saveResume) {
+    const { baseline, candidate } = report.saveResume;
+    checks.Stability = {
+      status:
+        candidate.status !== "passed"
+          ? "Failed"
+          : baseline.status === "passed"
+            ? "Passed"
+            : "Review",
+      regression: baseline.status === "passed" && candidate.status === "failed",
+      findings: (["candidate", "baseline"] as const).map((key) => {
+        const result = report.saveResume?.[key];
+        const summary =
+          result?.status === "passed"
+            ? "restored the saved state and continued play"
+            : result?.status === "failed"
+              ? `failed at ${result.step ?? "save and resume"}`
+              : "did not record a save-and-resume result";
+        return {
+          summary: `${names[key]} ${summary}.${result?.reason ? ` ${result.reason}` : ""}${result?.line ? ` See log line ${result.line}.` : ""}`,
+          evidence: [
+            ...link(`${names[key]} log`, report[key].log),
+            ...link(`${names[key]} screenshot`, report[key].screenshot),
+          ],
+        };
+      }),
+    };
+  } else if (report.candidate.error)
     checks.Stability.findings.push({
       summary: report.candidate.error,
       evidence: logs,
