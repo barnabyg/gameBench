@@ -5,6 +5,8 @@ export const decisionSchema = z.object({
   move: z.string().min(1),
   step: z.int().positive(),
   meaningful: z.boolean().default(true),
+  month: z.int().nonnegative().optional(),
+  phase: z.string().optional(),
 });
 export type Decision = z.infer<typeof decisionSchema> & { line: number };
 type Trace = {
@@ -30,7 +32,10 @@ function intervals(trace: Trace) {
   for (const [index, from] of decisions.entries()) {
     const to = decisions[index + 1];
     if (!to) break;
-    const pair = JSON.stringify([from.move, to.move]);
+    const pair = JSON.stringify([
+      [from.move, from.month, from.phase],
+      [to.move, to.month, to.phase],
+    ]);
     const occurrence = (occurrences.get(pair) ?? 0) + 1;
     occurrences.set(pair, occurrence);
     result.set(`${pair}:${occurrence}`, {
@@ -42,6 +47,13 @@ function intervals(trace: Trace) {
     });
   }
   return result;
+}
+
+function longest(values: ReturnType<typeof intervals>) {
+  let best: ReturnType<typeof values.get>;
+  for (const interval of values.values())
+    if (!best || interval.steps > best.steps) best = interval;
+  return best ?? null;
 }
 
 export function comparePacing(
@@ -73,6 +85,7 @@ export function comparePacing(
       unmatchedBaseline: before.size - matched.length,
       unmatchedCandidate: after.size - matched.length,
     },
+    longest: { baseline: longest(before), candidate: longest(after) },
     changes: matched.filter((change) => change.deltaSteps !== 0),
     stalls: {
       baseline: [...before.values()].filter(
