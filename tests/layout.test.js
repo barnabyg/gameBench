@@ -32,8 +32,17 @@ test("pass clean promotion layouts and gate repeatable clipping and overlap with
    button{position:absolute;left:10px;bottom:0}
  `,
   );
+  const shifted = await fixture(
+    "offscreen",
+    "body {overflow:hidden} section {top:790px}",
+  );
+  const scrolling = await fixture(
+    "scrolling",
+    "section {height:60px;overflow-y:auto}",
+  );
   const adapter = path.resolve("src/failureship.ts");
-  for (const candidate of [clean, defects]) {
+  for (const candidate of [clean, defects, shifted, scrolling]) {
+    const passes = candidate === clean || candidate === scrolling;
     const manifest = path.join(root, "comparison.json");
     await writeFile(
       manifest,
@@ -56,11 +65,8 @@ test("pass clean promotion layouts and gate repeatable clipping and overlap with
     );
     const reportPath = command.stdout.trim();
     const report = JSON.parse(await readFile(reportPath, "utf8"));
-    assert.equal(command.status, candidate === clean ? 0 : 1, command.stderr);
-    assert.equal(
-      report.layout.status,
-      candidate === clean ? "passed" : "failed",
-    );
+    assert.equal(command.status, passes ? 0 : 1, command.stderr);
+    assert.equal(report.layout.status, passes ? "passed" : "failed");
     assert.deepEqual(report.layout.resolution, { width: 1280, height: 800 });
     assert.deepEqual(report.layout.baseline.issues, []);
     const issues = report.layout.candidate.issues;
@@ -79,7 +85,9 @@ test("pass clean promotion layouts and gate repeatable clipping and overlap with
             [issue.target, issue.other].includes("continue"),
         ),
       );
-    } else assert.deepEqual(issues, []);
+    } else if (candidate === shifted)
+      assert.ok(issues.some((issue) => issue.type === "clipping"));
+    else assert.deepEqual(issues, []);
     for (const role of ["baseline", "candidate"]) {
       const png = await readFile(
         path.join(path.dirname(reportPath), report[role].screenshot),

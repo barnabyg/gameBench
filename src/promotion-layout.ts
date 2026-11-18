@@ -48,6 +48,7 @@ export async function inspectPromotion(page: Page): Promise<Issue[]> {
       }
       if (
         textRects.some((rect) => {
+          let inVerticalScroller = false;
           for (
             let ancestor: HTMLElement | null = element;
             ancestor;
@@ -69,10 +70,23 @@ export async function inspectPromotion(page: Page): Promise<Issue[]> {
                 rect.bottom > top + ancestor.clientHeight + tolerance)
             )
               return true;
-            if (ancestor === panel) break;
+            if (
+              ["auto", "scroll"].includes(style.overflowY) &&
+              ancestor.scrollHeight > ancestor.clientHeight + tolerance &&
+              top < window.innerHeight &&
+              top + ancestor.clientHeight > 0 &&
+              rect.top + ancestor.scrollTop >= top - tolerance &&
+              rect.bottom + ancestor.scrollTop <=
+                top + ancestor.scrollHeight + tolerance
+            )
+              inVerticalScroller = true;
           }
           return (
-            rect.left < -tolerance || rect.right > window.innerWidth + tolerance
+            rect.left < -tolerance ||
+            rect.right > window.innerWidth + tolerance ||
+            (!inVerticalScroller &&
+              (rect.top < -tolerance ||
+                rect.bottom > window.innerHeight + tolerance))
           );
         })
       )
