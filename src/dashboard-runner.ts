@@ -1,9 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
+  rename,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -11,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { command, type CommandResult } from "./dashboard-command.ts";
+import { comparisonBaselineSchema } from "./dashboard-reports.ts";
 import { visualReviewSchema } from "./visual-review.ts";
 
 const repositoryName = z
@@ -102,6 +107,15 @@ function inside(root: string, target: string) {
   );
 }
 
+function escapesCheckout(output: string) {
+  const relative = path.normalize(output);
+  return (
+    Boolean(path.parse(relative).root) ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`)
+  );
+}
+
 function assertSuccess(
   result: CommandResult,
   label: string,
@@ -182,10 +196,43 @@ function npmCommand(args: string[]): [string, string[]] {
 export class DashboardRunner {
   private configPath: string | undefined;
   private outputRoot: string;
+  private setupState: string;
+  private savedRecipes = new Map<string, Recipe>();
 
   constructor(configPath: string | undefined, outputRoot: string) {
     this.configPath = configPath && path.resolve(configPath);
     this.outputRoot = path.resolve(outputRoot);
+    this.setupState = path.join(this.outputRoot, "dashboard-setup");
+  }
+
+  async restoreSetups() {
+    await mkdir(this.setupState, { recursive: true });
+    const entries = await readdir(this.setupState, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^repo-.+\.json$/.test(entry.name)) continue;
+      try {
+        const recipe = recipeSchema.parse(
+          JSON.parse(
+            await readFile(path.join(this.setupState, entry.name), "utf8"),
+          ),
+        );
+        const key = recipe.repository.toLowerCase();
+        if (
+          entry.name !== this.recipeFilename(key) ||
+          !path.isAbsolute(recipe.comparison.adapter)
+        )
+          throw new Error(
+            "The saved recipe has the wrong repository or adapter path.",
+          );
+        this.savedRecipes.set(key, recipe);
+      } catch (error) {
+        console.error(`Saved setup ${entry.name} is unavailable:`, error);
+      }
+    }
+  }
+
+  private recipeFilename(key: string) {
+    return `repo-${key.replace("/", ".")}.json`;
   }
 
   private async games() {
@@ -195,6 +242,7 @@ export class DashboardRunner {
         game,
       ]),
     );
+    for (const [key, recipe] of this.savedRecipes) games.set(key, recipe);
     if (this.configPath) {
       const directory = path.dirname(this.configPath);
       const config = z
@@ -215,9 +263,83 @@ export class DashboardRunner {
 
   private async recipeFor(fullName: string) {
     const repository = repositoryName.parse(fullName);
-    const recipe = (await this.games()).get(repository.toLowerCase());
-    if (!recipe) throw new Error(`${repository} needs benchmark setup.`);
-    return recipe;
+    return (await this.games()).get(repository.toLowerCase());
+  }
+
+  private async prepareSetup(
+    fullName: string,
+    onProgress: (message: string) => void,
+  ) {
+    onProgress("Validating benchmark setup.");
+    const key = repositoryName.parse(fullName).toLowerCase();
+    const source = path.join(
+      this.outputRoot,
+      "setup-recipes",
+      this.recipeFilename(key),
+    );
+    let recipe: Recipe;
+    try {
+      recipe = recipeSchema.parse(JSON.parse(await readFile(source, "utf8")));
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        throw new Error(`Add a trusted recipe at ${source} and retry.`);
+      const detail =
+        error instanceof z.ZodError ? z.prettifyError(error) : String(error);
+      throw new Error(`Could not read benchmark recipe ${source}: ${detail}`);
+    }
+    if (recipe.repository.toLowerCase() !== key)
+      throw new Error(
+        `Set the repository in ${source} to ${fullName} and retry.`,
+      );
+    const adapter = path.resolve(
+      path.dirname(source),
+      recipe.comparison.adapter,
+    );
+    if (!(await stat(adapter).catch(() => undefined))?.isFile())
+      throw new Error(
+        `Adapter file is unavailable: ${adapter}. Correct ${source} and retry.`,
+      );
+    if (escapesCheckout(recipe.build.output))
+      throw new Error(
+        `Set build.output in ${source} to a path inside the checkout and retry.`,
+      );
+    await this.api(
+      `repos/${fullName}/commits/${recipe.baseline}`,
+      ["--jq", ".sha"],
+      `Could not verify the baseline commit for ${fullName}. Check ${source} and retry`,
+    );
+
+    return {
+      ...recipe,
+      repository: fullName,
+      comparison: { ...recipe.comparison, adapter },
+    };
+  }
+
+  private async confirmSetup(recipe: Recipe, report: string) {
+    try {
+      const { baseline } = comparisonBaselineSchema.parse(
+        JSON.parse(await readFile(report, "utf8")),
+      );
+      if (baseline.status === "failed")
+        return "Setup could not be saved because the baseline did not run. Open the report for evidence, correct the recipe and retry.";
+      await this.saveSetup(recipe);
+    } catch (error) {
+      return `Could not save benchmark setup. Open the report for evidence and retry. ${String(error)}`;
+    }
+  }
+
+  private async saveSetup(recipe: Recipe) {
+    const key = recipe.repository.toLowerCase();
+    const destination = path.join(this.setupState, this.recipeFilename(key));
+    const pending = `${destination}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(pending, JSON.stringify(recipe));
+      await rename(pending, destination);
+    } finally {
+      await rm(pending, { force: true });
+    }
+    this.savedRecipes.set(key, recipe);
   }
 
   private async api(
@@ -248,7 +370,9 @@ export class DashboardRunner {
   }
 
   async branches(fullName: string) {
-    const { repository } = await this.recipeFor(fullName);
+    const recipe = await this.recipeFor(fullName);
+    if (!recipe) throw new Error(`${fullName} needs benchmark setup.`);
+    const { repository } = recipe;
     const response = await this.api(
       `repos/${repository}/branches?per_page=100`,
       ["--paginate", "--slurp"],
@@ -265,7 +389,9 @@ export class DashboardRunner {
     branch: string,
     onProgress: (message: string) => void,
   ) {
-    const recipe = await this.recipeFor(fullName);
+    const configured = await this.recipeFor(fullName);
+    const recipe =
+      configured ?? (await this.prepareSetup(fullName, onProgress));
     const { repository } = recipe;
 
     onProgress(`Resolving branch ${branch}`);
@@ -284,9 +410,9 @@ export class DashboardRunner {
     const build = async (role: "baseline" | "candidate", version: string) => {
       const checkout = path.join(directory, role);
       await mkdir(checkout);
-      const output = path.resolve(checkout, recipe.build.output);
-      if (!inside(checkout, output))
+      if (escapesCheckout(recipe.build.output))
         throw new Error("The build output must stay inside the checkout.");
+      const output = path.resolve(checkout, recipe.build.output);
 
       const git = async (step: string, args: string[]) => {
         const evidence = path.join(directory, `${role}-${step}.log`);
@@ -383,11 +509,17 @@ export class DashboardRunner {
       inside(directory, report) &&
       path.basename(report) === "report.json" &&
       (await stat(report).catch(() => undefined))?.isFile()
-    )
+    ) {
+      const setupError = configured
+        ? undefined
+        : await this.confirmSetup(recipe, report);
       return {
         reports: [report],
         passed: result.status === 0 && !result.error,
+        setupComplete: !configured && !setupError,
+        setupError,
       };
+    }
 
     assertSuccess(result, "Benchmark failed", evidence);
     throw new Error(`Benchmark finished without a report. See ${evidence}.`);

@@ -229,9 +229,11 @@ const repositoryPanel = document.querySelector("#repositories");
 const repositorySearch = document.querySelector("#repository-search");
 const repositoryStatus = document.querySelector("#repository-status");
 const repositoryList = document.querySelector("#repository-list");
+const selectionCount = document.querySelector("#selection-count");
 const runSelected = document.querySelector("#run-selected");
 const runSection = document.querySelector("#runs");
 const runList = document.querySelector("#run-list");
+const showRuns = document.querySelector("#show-runs");
 const selectionKey = "gamebench.selected";
 let repositories;
 const selected = new Set();
@@ -311,11 +313,9 @@ function matchingRepositories() {
 }
 
 function repositoryCount(count = matchingRepositories().length) {
-  const label = count
+  return count
     ? `${count} ${count === 1 ? "repository" : "repositories"}`
     : "No matching repositories";
-  const selectedCount = readySelection().length;
-  return selectedCount ? `${label} · ${selectedCount} selected` : label;
 }
 
 function renderRepositories() {
@@ -326,8 +326,7 @@ function renderRepositories() {
     ...matches.map((repo) => {
       const checkbox = element("input");
       checkbox.type = "checkbox";
-      checkbox.disabled = !repo.ready;
-      checkbox.checked = selected.has(repo.fullName) && repo.ready;
+      checkbox.checked = selected.has(repo.fullName);
       const label = element("label");
       label.append(checkbox, element("span", repo.fullName));
       const status = element(
@@ -338,11 +337,11 @@ function renderRepositories() {
       const row = element("li");
       const controls = element("div", undefined, "repo-controls");
       controls.append(status);
-      if (checkbox.checked) controls.append(branchPicker(repo));
+      if (checkbox.checked && repo.ready) controls.append(branchPicker(repo));
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) {
           selected.add(repo.fullName);
-          controls.append(branchPicker(repo));
+          if (repo.ready) controls.append(branchPicker(repo));
         } else {
           selected.delete(repo.fullName);
           selectedBranches.delete(repo.fullName);
@@ -350,8 +349,6 @@ function renderRepositories() {
           controls.querySelector(".branch-picker")?.remove();
         }
         localStorage.setItem(selectionKey, JSON.stringify([...selected]));
-        if (!repositoryStatus.dataset.pollError)
-          repositoryStatus.textContent = repositoryCount(matches.length);
         enableRun();
       });
       row.append(label, controls);
@@ -361,15 +358,15 @@ function renderRepositories() {
   enableRun();
 }
 
-function readySelection() {
-  return (
-    repositories?.filter((repo) => repo.ready && selected.has(repo.fullName)) ??
-    []
-  );
+function repositorySelection() {
+  return repositories?.filter((repo) => selected.has(repo.fullName)) ?? [];
 }
 
 function enableRun() {
-  runSelected.disabled = running || submitting || !readySelection().length;
+  const count = repositorySelection().length;
+  const label = `${count} selected`;
+  if (selectionCount.textContent !== label) selectionCount.textContent = label;
+  runSelected.disabled = running || submitting || !count;
 }
 
 repositoryPanel.addEventListener("toggle", async () => {
@@ -412,6 +409,7 @@ function renderRuns(jobs) {
   if (snapshot === shownRuns) return;
   shownRuns = snapshot;
   runSection.hidden = !jobs.length;
+  showRuns.hidden = runSection.hidden;
   runList.replaceChildren(
     ...jobs.map((job) => {
       const entry = element("li");
@@ -436,6 +434,21 @@ function renderRuns(jobs) {
   );
 }
 
+function applyCompletedSetups(jobs) {
+  if (!repositories) return;
+  const ready = new Set(
+    jobs.filter((job) => job.setupComplete).map((job) => job.repository),
+  );
+  let changed = false;
+  for (const repo of repositories) {
+    if (!repo.ready && ready.has(repo.fullName)) {
+      repo.ready = true;
+      changed = true;
+    }
+  }
+  if (changed && repositoryPanel.open) renderRepositories();
+}
+
 async function checkRuns() {
   const version = ++pollVersion;
   clearTimeout(pollTimer);
@@ -446,6 +459,7 @@ async function checkRuns() {
     if (version !== pollVersion) return;
     renderRuns(jobs);
     running = jobs.some((job) => job.status === "Running");
+    applyCompletedSetups(jobs);
     enableRun();
     if (repositoryStatus.dataset.pollError) {
       delete repositoryStatus.dataset.pollError;
@@ -472,7 +486,7 @@ runSelected.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        repositories: readySelection().map((repo) => ({
+        repositories: repositorySelection().map((repo) => ({
           repository: repo.fullName,
           branch: selectedBranches.get(repo.fullName),
         })),

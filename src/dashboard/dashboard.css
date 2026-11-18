@@ -52,7 +52,9 @@ a {
 }
 .site-header nav {
   display: flex;
-  gap: 1.25rem;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 0.4rem 1.25rem;
 }
 .wordmark {
   text-decoration: none;
@@ -66,6 +68,17 @@ a {
 
 main {
   padding-block: clamp(2rem, 5vw, 4rem);
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+}
+#results,
+.dashboard-controls {
+  min-width: 0;
+}
+.dashboard-controls {
+  display: grid;
+  gap: 1rem;
 }
 .section-heading {
   display: flex;
@@ -262,7 +275,6 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
-  margin-bottom: 1.5rem;
 }
 .repository-panel summary {
   cursor: pointer;
@@ -277,9 +289,26 @@ tbody tr:hover {
 }
 .repository-tools input {
   font: inherit;
+  width: 100%;
   padding: 0.4rem 0.6rem;
   border: 1px solid #8c9b96;
   border-radius: 0.35rem;
+}
+.repository-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  min-inline-size: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 0 0;
+}
+#selection-count {
+  margin: 0;
+  color: var(--muted);
 }
 .primary {
   background: var(--accent);
@@ -307,7 +336,11 @@ tbody tr:hover {
 }
 #repository-list {
   overflow: auto;
-  max-height: 18rem;
+  max-height: min(18rem, 36vh);
+}
+#run-list {
+  overflow: auto;
+  max-height: min(26rem, 42vh);
 }
 #repository-list li,
 #run-list li {
@@ -331,6 +364,10 @@ tbody tr:hover {
   align-items: center;
   gap: 0.5rem 1rem;
 }
+#repository-list label span,
+#run-list strong {
+  overflow-wrap: anywhere;
+}
 .branch-picker select {
   max-width: 20ch;
   padding: 0.25rem;
@@ -349,6 +386,12 @@ tbody tr:hover {
 [data-status="Running"] .status {
   background: #e7eefe;
   color: #273e71;
+}
+
+@media (min-width: 68rem) {
+  main {
+    grid-template-columns: minmax(0, 1fr) clamp(20rem, 28vw, 25rem);
+  }
 }
 
 @media (max-width: 40rem) {
