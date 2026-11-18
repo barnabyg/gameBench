@@ -45,6 +45,7 @@ const runRequest = z.object({
       z.object({
         repository: z.string().min(1),
         branch: z.string().min(1).optional(),
+        allowBuildSmoke: z.literal(true).optional(),
       }),
     )
     .min(1),

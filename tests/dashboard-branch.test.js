@@ -169,6 +169,87 @@ async function launch(directory, game, configured = true) {
 }
 
 test(
+  "approves build smoke once, keeps its baseline, and reports a later build failure",
+  { timeout: 120_000 },
+  async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "gamebench-smoke-"));
+    let server;
+    let browser;
+    try {
+      const game = await createGame(directory);
+      await githubFixture(directory);
+      server = await launch(directory, game, false);
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      const checkbox = page.getByRole("checkbox", { name: repository });
+      const run = page.getByRole("button", { name: "Run selected" });
+      const dialog = page.getByRole("dialog", {
+        name: "Trust repositories for build smoke",
+      });
+      await page.goto(server.url);
+      await page.getByRole("link", { name: "Repositories" }).click();
+      await checkbox.check();
+      await run.click();
+      await dialog
+        .getByText(repository, { exact: true })
+        .waitFor({ timeout: 10_000 });
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      assert.equal(
+        await page.getByRole("heading", { name: "Benchmark runs" }).isVisible(),
+        false,
+      );
+      await run.click();
+      await dialog.getByRole("button", { name: "Trust and run" }).click();
+      await page
+        .getByRole("link", { name: "Open report" })
+        .click({ timeout: 45_000 });
+      await page
+        .getByText("Candidate built successfully.", { exact: true })
+        .waitFor();
+
+      game.git("switch", "-q", "main");
+      await writeFile(
+        path.join(game.checkout, "package.json"),
+        JSON.stringify({
+          name: "harvest-fixture",
+          version: "1.0.0",
+          scripts: { build: 'node -e "process.exit(2)"' },
+        }),
+      );
+      const broken = await game.commit(8);
+      await server.stop();
+      server = await launch(directory, game, false);
+      await page.goto(server.url);
+      await page.getByRole("link", { name: "Repositories" }).click();
+      const row = page
+        .getByRole("list", { name: "GitHub repositories" })
+        .getByRole("listitem")
+        .filter({ hasText: repository });
+      await row.getByText("Ready", { exact: true }).waitFor();
+      await checkbox.check();
+      await run.click();
+      await page
+        .getByRole("link", { name: "Open report" })
+        .click({ timeout: 45_000 });
+      const finding = page.locator("#finding");
+      await finding.getByText(/Candidate build failed/).waitFor();
+      await finding.getByText(game.baseline, { exact: true }).waitFor();
+      await finding.getByText(broken, { exact: true }).waitFor();
+      const log = finding.getByRole("link", { name: "Candidate log" });
+      const href = await log.getAttribute("href");
+      assert.ok(href);
+      const evidence = await page.request.get(new URL(href, server.url).href);
+      assert.ok(evidence.ok());
+      assert.match(await evidence.text(), /process\.exit\(2\)/);
+    } finally {
+      await browser?.close();
+      await server?.stop();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
   "sets up a selected repository during its run and reuses the setup after restart",
   { timeout: 120_000 },
   async () => {
@@ -184,6 +265,13 @@ test(
         "repo-benchmark-fixtures.harvest.json",
       );
       await mkdir(recipeDirectory, { recursive: true });
+      await writeFile(
+        path.join(
+          recipeDirectory,
+          "repo-benchmark-fixtures.missing-recipe.json",
+        ),
+        "{}",
+      );
       await writeFile(
         recipeFile,
         JSON.stringify({
@@ -209,7 +297,7 @@ test(
         .getByText(/Adapter file is unavailable.*missing\.mjs/)
         .waitFor();
       await page
-        .getByText(/Add a trusted recipe.*missing-recipe\.json/)
+        .getByText(/Could not read benchmark recipe.*missing-recipe\.json/)
         .waitFor();
       await repo.getByText("Needs setup").waitFor();
 

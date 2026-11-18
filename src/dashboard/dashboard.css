@@ -310,6 +310,26 @@ tbody tr:hover {
   margin: 0;
   color: var(--muted);
 }
+#build-smoke-approval {
+  width: min(30rem, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--ink);
+}
+#build-smoke-approval::backdrop {
+  background: rgb(20 45 43 / 55%);
+}
+#build-smoke-repositories {
+  overflow-wrap: anywhere;
+}
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 0.75rem;
+}
 .primary {
   background: var(--accent);
   color: #fff;

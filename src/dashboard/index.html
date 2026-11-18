@@ -53,5 +53,26 @@
         </section>
       </div>
     </main>
+    <dialog
+      id="build-smoke-approval"
+      aria-labelledby="build-smoke-title"
+      aria-describedby="build-smoke-description"
+    >
+      <h2 id="build-smoke-title">Trust repositories for build smoke</h2>
+      <p id="build-smoke-description">
+        These repositories have no local gameplay recipe. Build smoke runs their
+        npm install and build scripts on this machine. After a successful first
+        run, later runs reuse your approval.
+      </p>
+      <ul id="build-smoke-repositories"></ul>
+      <div class="dialog-actions">
+        <button id="cancel-build-smoke" class="plain-button" type="button">
+          Cancel
+        </button>
+        <button id="approve-build-smoke" class="primary" type="button">
+          Trust and run
+        </button>
+      </div>
+    </dialog>
   </body>
 </html>

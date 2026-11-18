@@ -49,12 +49,16 @@ function viewFinding(report, area, button) {
   const details = element("dl", undefined, "run-details");
   const labels = {
     Scenario: scenario,
-    Strategy: strategy,
-    ...(seeds ? { Seeds: seeds.join(", ") } : { Seed: String(seed) }),
+    ...(report.kind === "build-smoke"
+      ? { Commands: strategy }
+      : {
+          Strategy: strategy,
+          ...(seeds ? { Seeds: seeds.join(", ") } : { Seed: String(seed) }),
+          ...(settings ? { Settings: JSON.stringify(settings) } : {}),
+        }),
     Baseline: report.baseline,
     Candidate: report.candidate,
     ...(report.branch ? { Branch: report.branch } : {}),
-    ...(settings ? { Settings: JSON.stringify(settings) } : {}),
     ...(report.pacingThreshold !== undefined
       ? { "Pacing stall threshold": `${report.pacingThreshold} steps` }
       : {}),
@@ -234,6 +238,11 @@ const runSelected = document.querySelector("#run-selected");
 const runSection = document.querySelector("#runs");
 const runList = document.querySelector("#run-list");
 const showRuns = document.querySelector("#show-runs");
+const buildSmokeApproval = document.querySelector("#build-smoke-approval");
+const buildSmokeRepositories = document.querySelector(
+  "#build-smoke-repositories",
+);
+let pendingSmokeApproval = [];
 const selectionKey = "gamebench.selected";
 let repositories;
 const selected = new Set();
@@ -477,7 +486,7 @@ async function checkRuns() {
   }
 }
 
-runSelected.addEventListener("click", async () => {
+async function startRun(approved = []) {
   submitting = true;
   running = true;
   enableRun();
@@ -489,6 +498,7 @@ runSelected.addEventListener("click", async () => {
         repositories: repositorySelection().map((repo) => ({
           repository: repo.fullName,
           branch: selectedBranches.get(repo.fullName),
+          allowBuildSmoke: approved.includes(repo.fullName) ? true : undefined,
         })),
       }),
     });
@@ -498,6 +508,28 @@ runSelected.addEventListener("click", async () => {
     submitting = false;
     await checkRuns();
   }
+}
+
+runSelected.addEventListener("click", () => {
+  pendingSmokeApproval = repositorySelection()
+    .filter((repo) => !repo.ready && repo.needsBuildSmokeApproval)
+    .map((repo) => repo.fullName);
+  if (!pendingSmokeApproval.length) {
+    void startRun();
+    return;
+  }
+  buildSmokeRepositories.replaceChildren(
+    ...pendingSmokeApproval.map((name) => element("li", name)),
+  );
+  buildSmokeApproval.showModal();
+});
+
+document.querySelector("#cancel-build-smoke").addEventListener("click", () => {
+  buildSmokeApproval.close();
+});
+document.querySelector("#approve-build-smoke").addEventListener("click", () => {
+  buildSmokeApproval.close();
+  void startRun(pendingSmokeApproval);
 });
 
 await checkRuns();
