@@ -4,6 +4,8 @@ const finding = document.querySelector("#finding");
 const resultCount = document.querySelector("#result-count");
 let activeCell;
 let shownReports;
+let reportData = [];
+const chosenReports = new Map();
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -43,16 +45,16 @@ function viewFinding(report, area, button) {
   });
   const heading = element("div", undefined, "section-heading");
   heading.append(title, close);
-  const { scenario, seed, strategy, settings } = report.inputs;
+  const { scenario, seed, seeds, strategy, settings } = report.inputs;
   const details = element("dl", undefined, "run-details");
   const labels = {
     Scenario: scenario,
     Strategy: strategy,
-    Seed: String(seed),
+    ...(seeds ? { Seeds: seeds.join(", ") } : { Seed: String(seed) }),
     Baseline: report.baseline,
     Candidate: report.candidate,
     ...(report.branch ? { Branch: report.branch } : {}),
-    Settings: JSON.stringify(settings),
+    ...(settings ? { Settings: JSON.stringify(settings) } : {}),
   };
   for (const [label, value] of Object.entries(labels)) {
     const pair = element("div");
@@ -65,6 +67,7 @@ function viewFinding(report, area, button) {
   for (const item of check.findings) {
     const section = element("article", undefined, "finding");
     section.append(element("p", item.summary));
+    if (item.question) section.append(element("p", item.question, "playtest"));
     const previews = item.evidence.filter((evidence) => evidence.image);
     const files = item.evidence.filter((evidence) => !evidence.image);
     if (previews.length) {
@@ -83,10 +86,30 @@ function viewFinding(report, area, button) {
   finding.focus();
 }
 
-function renderReports(reports) {
-  resultCount.textContent = `${reports.length} ${reports.length === 1 ? "report" : "reports"}`;
+function priority(report) {
+  const checks = Object.values(report.checks);
+  const failed = checks.some((check) => check.status === "Failed");
+  const review = checks.some((check) => check.status === "Review");
+  const regression = checks.some((check) => check.regression);
+  return Number(regression) * 4 + (failed ? 2 : Number(review));
+}
+
+function renderReports() {
+  const games = new Map();
+  for (const report of reportData) {
+    if (!games.has(report.game)) games.set(report.game, []);
+    games.get(report.game).push(report);
+  }
+  const rows = [...games].map(([game, history]) => ({
+    report:
+      history.find((item) => item.id === chosenReports.get(game)) ??
+      history.at(-1),
+    history,
+  }));
+  rows.sort((a, b) => priority(b.report) - priority(a.report));
+  resultCount.textContent = `${rows.length} ${rows.length === 1 ? "game" : "games"} · ${reportData.length} ${reportData.length === 1 ? "report" : "reports"}`;
   finding.hidden = true;
-  if (!reports.length) {
+  if (!rows.length) {
     matrix.replaceChildren(
       element("p", "No saved reports are loaded.", "empty"),
     );
@@ -101,15 +124,39 @@ function renderReports(reports) {
     head.append(cell);
   }
   const body = table.createTBody();
-  for (const report of reports) {
+  for (const { report, history } of rows) {
     const row = body.insertRow();
     row.id = `report-${report.id}`;
     const label = element("th", undefined, "game");
     label.scope = "row";
-    label.append(
-      element("strong", report.game),
-      element("small", report.inputs.scenario),
-    );
+    label.append(element("strong", report.game));
+    if (history.length > 1) {
+      const historyPicker = element("select", undefined, "history");
+      historyPicker.setAttribute(
+        "aria-label",
+        `Saved reports for ${report.game}`,
+      );
+      for (const previous of history.toReversed()) {
+        const branch = previous.branch ? ` · ${previous.branch}` : "";
+        const option = element(
+          "option",
+          `${previous.inputs.scenario}${branch} · ${previous.candidate.slice(0, 8)}`,
+        );
+        option.value = previous.id;
+        historyPicker.append(option);
+      }
+      historyPicker.value = report.id;
+      historyPicker.addEventListener("change", () => {
+        const id = historyPicker.value;
+        chosenReports.set(report.game, id);
+        renderReports();
+        document
+          .getElementById(`report-${id}`)
+          ?.querySelector(".history")
+          ?.focus();
+      });
+      label.append(historyPicker);
+    } else label.append(element("small", report.inputs.scenario));
     row.append(label);
     for (const area of areas) {
       const check = report.checks[area];
@@ -120,6 +167,10 @@ function renderReports(reports) {
       button.setAttribute("aria-expanded", "false");
       button.dataset.status = check.status;
       button.append(element("span", check.status, "status"));
+      if (check.status === "Review" || check.status === "Failed")
+        button.append(
+          element("span", check.findings[0]?.summary, "check-summary"),
+        );
       button.addEventListener("click", () => viewFinding(report, area, button));
       row.insertCell().append(button);
     }
@@ -135,12 +186,27 @@ async function loadReports() {
     const ids = reports.map((report) => report.id).join(",");
     if (ids !== shownReports) {
       shownReports = ids;
-      renderReports(reports);
+      reportData = reports;
+      renderReports();
     }
   } catch {
     resultCount.textContent =
       "Reports could not be loaded. Refresh to try again.";
   }
+}
+
+function openReport(id) {
+  const report = reportData.find((item) => item.id === id);
+  if (!report) return;
+  if (!document.getElementById(`report-${id}`)) {
+    chosenReports.set(report.game, id);
+    renderReports();
+  }
+  const row = document.getElementById(`report-${id}`);
+  const relevant = row?.querySelector(
+    '.check[data-status="Failed"], .check[data-status="Review"]',
+  );
+  (relevant ?? row?.querySelector('.check[data-status="Passed"]'))?.click();
 }
 
 const repositoryPanel = document.querySelector("#repositories");
@@ -260,12 +326,7 @@ function renderRuns(jobs) {
       for (const id of job.reportIds) {
         const link = element("a", "Open report");
         link.href = `#report-${id}`;
-        link.addEventListener("click", () =>
-          document
-            .getElementById(`report-${id}`)
-            ?.querySelector('.check:not([data-status="Not measured"])')
-            ?.click(),
-        );
+        link.addEventListener("click", () => openReport(id));
         controls.append(link);
       }
       entry.append(labels, controls);

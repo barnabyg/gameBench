@@ -12,6 +12,10 @@ npm.cmd ci && npm.cmd run dashboard -- --report 'Failureship=C:/path/to/saved/ru
 
 Use the report path printed by the Failureship visual review. Open the local URL the dashboard prints and select the Visuals cell for Failureship. Compare the baseline and candidate captures at a checkpoint and open the visual diff when available. The Stability cell links the milestone screenshots and build logs. Areas without measurements are labelled **Not measured**.
 
+To compare saved reports, repeat `--report` with a game name and report path. For example, use the report from [Decision pacing](#decision-pacing) for one game and the completed comparison from [Try the comparison](#try-the-comparison) for a second game. With the saved-run launch command above, pass both paths as `--report 'Pacing demo=…' --report 'Delivery demo=…'`. Expect Pacing demo to appear first and show a two-step increase for review. Open that cell for both logs and the playtest question. Delivery demo shows **Not measured** for Pacing. When you open multiple reports for the same game, use its report selector to switch between runs.
+
+Use the same `--report` option with a Failureship `batch-report.json` to inspect strategy balance. The Balance cell shows promotion counts, rates as changes in percentage points, and links to paired reports and playtest questions where available.
+
 ## Run Failureship from GitHub
 
 From the gameBench root in PowerShell 7 with Node.js 24.13 or later, Git, and GitHub CLI signed in to an account with access to `barnabyg/failureship`, run:

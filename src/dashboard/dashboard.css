@@ -151,6 +151,30 @@ tbody tr:hover {
   padding: 0.3rem 0.55rem;
   white-space: nowrap;
 }
+.check-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin-top: 0.25rem;
+  max-width: 24ch;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+.history {
+  font: inherit;
+  margin-top: 0.25rem;
+  max-width: 18ch;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--white);
+  color: var(--muted);
+}
+.playtest {
+  border-left: 3px solid #a26c14;
+  padding-left: 0.7rem;
+  color: #66440b;
+}
 [data-status="Passed"] .status {
   background: #d9f0e4;
   color: #155846;
