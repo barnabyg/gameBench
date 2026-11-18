@@ -265,10 +265,11 @@ function branchPicker(repo) {
       repo.fullName,
       api(`/api/branches?repository=${encodeURIComponent(repo.fullName)}`),
     );
+  const lookup = branchLookups.get(repo.fullName);
   picker.disabled = true;
-  void branchLookups
-    .get(repo.fullName)
+  void lookup
     .then((branches) => {
+      if (!controls.isConnected) return;
       for (const branch of branches) {
         if (branch === repo.defaultBranch) continue;
         const option = element("option", branch);
@@ -276,11 +277,17 @@ function branchPicker(repo) {
         picker.append(option);
       }
       picker.value = selectedBranches.get(repo.fullName) ?? "";
-      if (picker.selectedIndex < 0) picker.value = "";
+      if (picker.selectedIndex < 0) {
+        selectedBranches.delete(repo.fullName);
+        picker.value = "";
+      }
       picker.disabled = picker.options.length < 2;
     })
     .catch(() => {
-      branchLookups.delete(repo.fullName);
+      if (branchLookups.get(repo.fullName) === lookup)
+        branchLookups.delete(repo.fullName);
+      if (!controls.isConnected) return;
+      selectedBranches.delete(repo.fullName);
       controls.append(
         element(
           "small",
@@ -323,6 +330,7 @@ function renderRepositories() {
         } else {
           selected.delete(repo.fullName);
           selectedBranches.delete(repo.fullName);
+          branchLookups.delete(repo.fullName);
           controls.querySelector(".branch-picker")?.remove();
         }
         localStorage.setItem(selectionKey, JSON.stringify([...selected]));
@@ -347,7 +355,12 @@ function enableRun() {
 }
 
 repositoryPanel.addEventListener("toggle", async () => {
-  if (!repositoryPanel.open || repositories) return;
+  if (!repositoryPanel.open) return;
+  if (repositories) {
+    branchLookups.clear();
+    renderRepositories();
+    return;
+  }
   repositoryStatus.textContent = "Loading GitHub repositories…";
   try {
     repositories = await api("/api/repositories");

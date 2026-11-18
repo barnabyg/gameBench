@@ -99,7 +99,7 @@ async function createGame(directory) {
       ],
     }),
   );
-  return { baseline, candidate, checkout, config, commit };
+  return { baseline, candidate, checkout, config, commit, git };
 }
 
 async function githubFixture(directory) {
@@ -120,7 +120,8 @@ async function githubFixture(directory) {
     if (endpoint === "user/repos") {
       result = [[{ name:"harvest", full_name:${JSON.stringify(repository)}, default_branch:"main" }]];
     } else if (endpoint.endsWith("branches?per_page=100")) {
-      result = [[{ name:"main" }],[{ name:${JSON.stringify(branch)} }]];
+      const refs = execFileSync("git", ["-C", "upstream", "for-each-ref", "--format=%(refname:short)", "refs/heads"], { encoding:"utf8" }).trim();
+      result = refs.split(/\\r?\\n/).map((name) => [{ name }]);
     } else if (endpoint.includes("/git/ref/heads/")) {
       const ref = decodeURIComponent(endpoint.split("/git/ref/heads/")[1]);
       result = execFileSync("git", ["-C", "upstream", "rev-parse", "refs/heads/" + ref], { encoding:"utf8" }).trim();
@@ -210,6 +211,14 @@ test(
 
       const advanced = await game.commit(8);
       assert.notEqual(advanced, game.candidate);
+      const newBranch = "dev/new-run";
+      game.git("branch", newBranch);
+      const disclosure = page.getByText("GitHub repositories", { exact: true });
+      await disclosure.click();
+      await disclosure.click();
+      await picker
+        .getByRole("option", { name: newBranch, includeHidden: true })
+        .waitFor({ state: "attached" });
       await server.stop();
       server = await launch(directory, game);
       await page.goto(server.url);

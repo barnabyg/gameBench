@@ -36,6 +36,8 @@ Use the same launch command and select Failureship and Grow or Die before choosi
 
 Use the same dashboard launch command. Check a Ready repository and use its **Candidate branch** selector, which starts on the default branch. Choose a buildable non-default branch at a known commit, run it, and open the report. Check that **Branch** and **Candidate** identify the selected branch and full commit SHA. If the branch advances, the saved report still refers to the original commit. Use the report selector beside the game name to revisit it after another run.
 
+Close and reopen GitHub repositories to refresh the branch choices for the checked games.
+
 The `pr-assets` branches in the pilot repositories are suitable for checking a build failure. They contain no game package. Expect a branch-specific failure while any other selected game can still finish.
 
 To exercise a build failure, save the following as `dashboard-failure.json` in the gameBench root and append `-- --config dashboard-failure.json` to the dashboard launch command. Select both games again. Grow or Die should show a build error while Failureship produces an openable report. This config overrides only the named game's recipe.
