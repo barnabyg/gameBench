@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
@@ -38,42 +38,89 @@ async function compare(source: string, output: string) {
   await save("replay.json", manifest);
   async function run(role: "baseline" | "candidate") {
     const build = manifest[role];
+    const screenshot = `${role}-milestone.png`;
+    const failureScreenshot = `${role}-failure.png`;
     const result = spawnSync(process.execPath, [manifest.adapter], {
       encoding: "utf8",
-      input: JSON.stringify({ build: build.build, inputs: manifest.inputs }),
+      input: JSON.stringify({
+        build: build.build,
+        inputs: manifest.inputs,
+        screenshot: path.join(directory, screenshot),
+        failureScreenshot: path.join(directory, failureScreenshot),
+      }),
       timeout: 180000,
       maxBuffer: 16 * 1024 * 1024,
     });
     const log = `${role}.ndjson`;
     await writeFile(path.join(directory, log), result.stdout ?? "");
-    if (result.error || result.status !== 0)
-      throw new Error(
-        `${role} (${build.version}) failed: ${result.error?.message ?? result.stderr}. Evidence: ${directory}`,
-      );
-    const lines = result.stdout.replace(/\r?\n$/, "").split("\n");
-    let lastEvent: unknown;
-    for (const [index, line] of lines.entries()) {
-      try {
-        lastEvent = z.record(z.string(), z.unknown()).parse(JSON.parse(line));
-      } catch {
+    const evidence = { version: build.version, log };
+    try {
+      if (result.error) throw result.error;
+      if (result.status !== 0) {
+        const detail = result.stderr.trim();
         throw new Error(
-          `Invalid event in ${path.join(directory, log)} at line ${index + 1}`,
+          `Adapter ended with ${result.signal ?? `exit code ${result.status}`}${detail ? `: ${detail}` : ""}`,
         );
       }
+      const lines = result.stdout.replace(/\r?\n$/, "").split("\n");
+      let lastEvent: unknown;
+      for (const [index, line] of lines.entries()) {
+        try {
+          lastEvent = z.record(z.string(), z.unknown()).parse(JSON.parse(line));
+        } catch {
+          throw new Error(
+            `Invalid event in ${path.join(directory, log)} at line ${index + 1}`,
+          );
+        }
+      }
+      const milestone = z
+        .object({ event: z.literal("milestone"), turn: z.int().nonnegative() })
+        .safeParse(lastEvent);
+      if (!milestone.success)
+        throw new Error("Adapter finished without a valid milestone");
+      return {
+        ...evidence,
+        status: "reached" as const,
+        turns: milestone.data.turn,
+        ...(await linkScreenshot(screenshot)),
+      };
+    } catch (cause) {
+      const error = cause instanceof Error ? cause.message : String(cause);
+      console.error(
+        `${role} (${build.version}) failed: ${error}. Evidence: ${directory}`,
+      );
+      return {
+        ...evidence,
+        status: "failed" as const,
+        turns: null,
+        error,
+        ...(await linkScreenshot(failureScreenshot)),
+      };
     }
-    const milestone = z
-      .object({ event: z.literal("milestone"), turn: z.int().nonnegative() })
-      .parse(lastEvent);
-    return { version: build.version, turns: milestone.turn, log };
+  }
+  async function linkScreenshot(screenshot: string) {
+    const captured = await access(path.join(directory, screenshot)).then(
+      () => true,
+      () => false,
+    );
+    return captured ? { screenshot } : {};
   }
   const baseline = await run("baseline");
   const candidate = await run("candidate");
+  const reached = [baseline, candidate].filter(
+    ({ status }) => status === "reached",
+  ).length;
+  const complete = baseline.turns !== null && candidate.turns !== null;
   await save("report.json", {
+    status: complete ? "complete" : "incomplete",
+    inputs: manifest.inputs,
     baseline,
     candidate,
-    changeInTurns: candidate.turns - baseline.turns,
+    outcomes: { attempted: 2, reached, missing: 2 - reached },
+    changeInTurns: complete ? candidate.turns - baseline.turns : null,
     replay: "replay.json",
   });
+  if (!complete) process.exitCode = 1;
   return path.join(directory, "report.json");
 }
 try {
