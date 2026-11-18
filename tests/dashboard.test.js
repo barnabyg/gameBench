@@ -45,6 +45,7 @@ test(
         candidate: { issues: [existing, added] },
       },
       visualReview: {
+        changedPixelThreshold: 0.005,
         checkpoints: [
           {
             label: "Ground floor",
@@ -134,6 +135,7 @@ test(
     await visual.getByRole("button", { name: "Visuals: Failed" }).click();
     const panel = page.locator("#finding");
     await panel.getByText(/1 new defect.*resolution unavailable/).waitFor();
+    await panel.getByText("0.5%", { exact: true }).waitFor();
     const checkpoint = panel
       .getByRole("article")
       .filter({ hasText: "Ground floor" });

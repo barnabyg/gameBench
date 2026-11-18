@@ -65,6 +65,7 @@ const reportSchema = z.object({
     .optional(),
   visualReview: z
     .object({
+      changedPixelThreshold: z.number().optional(),
       checkpoints: z.array(
         z.object({
           label: nonempty,
@@ -175,12 +176,18 @@ export async function loadReport(
     "inputs" in report
       ? comparisonChecks(report, link)
       : balanceChecks(report, link);
+  const visualThreshold =
+    "inputs" in report ? report.visualReview?.changedPixelThreshold : undefined;
+  const pacingThreshold =
+    "inputs" in report ? report.pacing?.stallAfterSteps : undefined;
   return {
     data: {
       id,
       game,
       branch,
       checks,
+      visualThreshold,
+      pacingThreshold,
       inputs:
         "inputs" in report
           ? report.inputs

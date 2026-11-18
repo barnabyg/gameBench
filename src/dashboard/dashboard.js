@@ -55,6 +55,17 @@ function viewFinding(report, area, button) {
     Candidate: report.candidate,
     ...(report.branch ? { Branch: report.branch } : {}),
     ...(settings ? { Settings: JSON.stringify(settings) } : {}),
+    ...(report.pacingThreshold !== undefined
+      ? { "Pacing stall threshold": `${report.pacingThreshold} steps` }
+      : {}),
+    ...(report.visualThreshold !== undefined
+      ? {
+          "Visual review threshold": new Intl.NumberFormat("en", {
+            style: "percent",
+            maximumFractionDigits: 3,
+          }).format(report.visualThreshold),
+        }
+      : {}),
   };
   for (const [label, value] of Object.entries(labels)) {
     const pair = element("div");
