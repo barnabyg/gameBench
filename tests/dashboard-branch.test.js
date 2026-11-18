@@ -208,7 +208,15 @@ test(
         }
         await route.continue();
       });
-      await page.getByRole("button", { name: "Run selected" }).click();
+      await page
+        .getByRole("searchbox", { name: "Search repositories" })
+        .fill("no matching repository");
+      await page.getByText("No matching repositories").waitFor();
+      const selection = page.getByRole("group", {
+        name: "Repository selection",
+      });
+      await selection.getByText("1 selected", { exact: true }).waitFor();
+      await selection.getByRole("button", { name: "Run selected" }).click();
       await page.getByText(/Run status temporarily unavailable/).waitFor();
       assert.ok(
         await page.getByRole("button", { name: "Run selected" }).isDisabled(),
@@ -231,6 +239,9 @@ test(
       assert.notEqual(advanced, game.candidate);
       const newBranch = "dev/new-run";
       game.git("branch", newBranch);
+      await page
+        .getByRole("searchbox", { name: "Search repositories" })
+        .fill("");
       const disclosure = page.getByText("GitHub repositories", { exact: true });
       await disclosure.click();
       await disclosure.click();

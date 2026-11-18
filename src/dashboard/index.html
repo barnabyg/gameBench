@@ -24,12 +24,18 @@
         <div class="repository-tools">
           <label for="repository-search">Search repositories</label>
           <input id="repository-search" type="search" autocomplete="off" />
-          <button id="run-selected" class="primary" type="button" disabled>
-            Run selected
-          </button>
         </div>
         <p id="repository-status" role="status"></p>
         <ul id="repository-list" aria-label="GitHub repositories"></ul>
+        <fieldset
+          class="repository-selection"
+          aria-label="Repository selection"
+        >
+          <p id="selection-count" role="status">0 selected</p>
+          <button id="run-selected" class="primary" type="button" disabled>
+            Run selected
+          </button>
+        </fieldset>
       </details>
       <section id="runs" aria-labelledby="runs-title" hidden>
         <h2 id="runs-title">Benchmark runs</h2>

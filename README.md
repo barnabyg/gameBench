@@ -38,6 +38,8 @@ Open the printed URL, expand GitHub repositories, and search for Failureship. Ch
 
 The dashboard runs build commands from configured game repositories on this machine. The built-in recipes trust `barnabyg/failureship` and `barnabyg/growOrDie`. Repositories without a local recipe cannot run.
 
+To check that search and selection work independently, use the same launch command from the gameBench root. Check Failureship, then enter a search that hides it. The selection count still shows **1 selected**. Choose **Run selected** in the selection controls below the repository list and expect a Failureship run.
+
 ### Run both games and check partial results
 
 Use the same launch command and select Failureship and Grow or Die before choosing **Run selected**. Expect independent progress for each game. Open the Grow or Die report to check that the seeded first harvest reached year 2 with 600 t of grain stored. The report lists the commit IDs, scenario, strategy, settings, and seed.

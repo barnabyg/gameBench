@@ -229,6 +229,7 @@ const repositoryPanel = document.querySelector("#repositories");
 const repositorySearch = document.querySelector("#repository-search");
 const repositoryStatus = document.querySelector("#repository-status");
 const repositoryList = document.querySelector("#repository-list");
+const selectionCount = document.querySelector("#selection-count");
 const runSelected = document.querySelector("#run-selected");
 const runSection = document.querySelector("#runs");
 const runList = document.querySelector("#run-list");
@@ -311,11 +312,9 @@ function matchingRepositories() {
 }
 
 function repositoryCount(count = matchingRepositories().length) {
-  const label = count
+  return count
     ? `${count} ${count === 1 ? "repository" : "repositories"}`
     : "No matching repositories";
-  const selectedCount = readySelection().length;
-  return selectedCount ? `${label} · ${selectedCount} selected` : label;
 }
 
 function renderRepositories() {
@@ -350,8 +349,6 @@ function renderRepositories() {
           controls.querySelector(".branch-picker")?.remove();
         }
         localStorage.setItem(selectionKey, JSON.stringify([...selected]));
-        if (!repositoryStatus.dataset.pollError)
-          repositoryStatus.textContent = repositoryCount(matches.length);
         enableRun();
       });
       row.append(label, controls);
@@ -369,7 +366,10 @@ function readySelection() {
 }
 
 function enableRun() {
-  runSelected.disabled = running || submitting || !readySelection().length;
+  const count = readySelection().length;
+  const label = `${count} selected`;
+  if (selectionCount.textContent !== label) selectionCount.textContent = label;
+  runSelected.disabled = running || submitting || !count;
 }
 
 repositoryPanel.addEventListener("toggle", async () => {
