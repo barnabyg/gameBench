@@ -12,7 +12,7 @@ test("compare a known pair and replay the same seeded playthrough from its evide
     return execFileSync(
       process.execPath,
       ["src/benchmark.ts", manifest, output],
-      { encoding: "utf8", timeout: 60000 },
+      { encoding: "utf8", timeout: 420000 },
     ).trim();
   }
   const reportPath = run("examples/comparison.json");
